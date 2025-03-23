@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "your-api-key-here")
 FTP_HOST = os.environ.get("FTP_HOST", "ftp.yourdomain.com")
 FTP_USER = os.environ.get("FTP_USER", "your-username")
 FTP_PASS = os.environ.get("FTP_PASS", "your-password")
-FTP_BLOG_DIR = "/public_html/blog-posts/" # Update this to your blog directory on Namecheap
+FTP_BLOG_DIR = "/blog-posts/" # Directory relative to web root # Update this to your blog directory on Namecheap
 
 # Local blog post storage
 LOCAL_BLOG_DIR = Path("blog-posts")
