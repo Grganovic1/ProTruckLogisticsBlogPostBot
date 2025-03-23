@@ -1,0 +1,38 @@
+name: Generate Blog Posts
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Runs at 8 AM UTC every day
+  workflow_dispatch:      # Allows manual triggering
+
+jobs:
+  generate_posts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai requests beautifulsoup4 html2text
+          
+      - name: Generate and upload blog posts
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+        run: python generate_blogs.py
+        
+      - name: Commit any changes to repository
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          git add ./blog-posts/*.json || true
+          git commit -m "Daily blog post generation [skip ci]" || true
+          git push
