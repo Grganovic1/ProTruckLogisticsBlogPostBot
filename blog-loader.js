@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
             recentPosts.forEach(post => {
                 recentPostsContainer.innerHTML += `
                     <li>
-                        <a href="post-${post.id}.html">${post.title}</a>
+                        <a href="blog-posts/post-${post.id}.html">${post.title}</a>
                         <p class="blog-date"><i class="far fa-calendar-alt me-2"></i>${post.date}</p>
                     </li>
                 `;
