@@ -44,13 +44,13 @@ BLOG_CATEGORIES = [
 # Blog authors
 AUTHORS = [
     {
-        "name": "John Smith",
+        "name": "Grga Grganovic",
         "position": "Logistics Specialist",
         "bio": "John has over 15 years of experience in the logistics industry, specializing in supply chain optimization and transportation management.",
         "image": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3"
     },
     {
-        "name": "Sarah Johnson",
+        "name": "Jovo ",
         "position": "Transportation Analyst",
         "bio": "Sarah is an expert in transportation economics and regulatory compliance with a background in both private sector logistics and government oversight.",
         "image": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3"
@@ -361,7 +361,7 @@ def create_blog_post_html(post):
                               f'<p id="author-bio">{post["author_bio"]}</p>')
     
     # Update share buttons with the post URL
-    share_url = f"https://www.yourdomain.com/post-{post_id}.html"  # Update with your actual domain
+    share_url = f"https://protrucklogistics.org/blog-posts/post-{post_id}.html"  # Update with your actual domain
     
     template = template.replace('<a href="#" class="share-button facebook">', 
                               f'<a href="https://www.facebook.com/sharer/sharer.php?u={share_url}" target="_blank" class="share-button facebook">')
