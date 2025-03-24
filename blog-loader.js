@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <h3 class="blog-title">${post.title}</h3>
                             <p class="blog-date"><i class="far fa-calendar-alt me-2"></i>${post.date}</p>
                             <p class="blog-excerpt">${post.excerpt}</p>
-                            <a href="post-${post.id}.html" class="btn btn-primary">Read More</a>
+                            <a href="blog-posts/post-${post.id}.html" class="btn btn-primary">Read More</a>
                         </div>
                     </div>
                 `;
