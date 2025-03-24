@@ -282,73 +282,88 @@ Format your response as a JSON object with keys "title", "summary", and "relevan
 def get_relevant_image(topic):
     """
     Gets a relevant image URL based on the topic for a semi truck company.
-    First attempts to fetch an image from the free Pixabay API.
-    If the API call fails or returns no results, it falls back to a preset dictionary of images tuned for semi truck companies.
+    It first attempts to use Google Custom Search to retrieve an image.
+    If that fails, it falls back to the free Pixabay API.
+    If both external methods fail, it uses a curated fallback dictionary.
     """
     print(f"Finding relevant image for topic: {topic}")
-    
     # Extract the topic title for search
     topic_title = topic.get("title", topic) if isinstance(topic, dict) else topic
-    search_query = topic_title  # Use the title as the search query
-    
-    # Attempt to use Pixabay API (free and fast approval)
+    search_query = topic_title
+
+    # 1. Try Google Custom Search API
+    GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+    GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID")
+    if GOOGLE_API_KEY and GOOGLE_CSE_ID:
+        try:
+            google_params = {
+                "key": GOOGLE_API_KEY,
+                "cx": GOOGLE_CSE_ID,
+                "q": search_query,
+                "searchType": "image",
+                "num": 1,
+                "safe": "active"
+            }
+            google_response = requests.get("https://www.googleapis.com/customsearch/v1", params=google_params, timeout=10)
+            if google_response.status_code == 200:
+                google_data = google_response.json()
+                items = google_data.get("items", [])
+                if items:
+                    image_url = items[0].get("link")
+                    if image_url:
+                        print("Using Google Custom Search image.")
+                        return image_url
+                else:
+                    print("Google Custom Search returned no results.")
+            else:
+                print(f"Google Custom Search request failed with status code {google_response.status_code}.")
+        except Exception as e:
+            print(f"Google Custom Search error: {e}")
+
+    # 2. Fallback: Try Pixabay API
     PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
     if PIXABAY_API_KEY:
         try:
-            response = requests.get(
-                "https://pixabay.com/api/",
-                params={
-                    "key": PIXABAY_API_KEY,
-                    "q": search_query,
-                    "image_type": "photo",
-                    "per_page": 1,
-                    "safesearch": "true"
-                },
-                timeout=10
-            )
-            if response.status_code == 200:
-                data = response.json()
-                hits = data.get("hits", [])
+            pixabay_params = {
+                "key": PIXABAY_API_KEY,
+                "q": search_query,
+                "image_type": "photo",
+                "per_page": 1,
+                "safesearch": "true"
+            }
+            pixabay_response = requests.get("https://pixabay.com/api/", params=pixabay_params, timeout=10)
+            if pixabay_response.status_code == 200:
+                pixabay_data = pixabay_response.json()
+                hits = pixabay_data.get("hits", [])
                 if hits:
-                    image_url = hits[0]["webformatURL"]
-                    print("Using Pixabay API image.")
-                    return image_url
+                    image_url = hits[0].get("webformatURL")
+                    if image_url:
+                        print("Using Pixabay API image.")
+                        return image_url
                 else:
                     print("Pixabay API returned no results.")
             else:
-                print(f"Pixabay API request failed with status code {response.status_code}.")
+                print(f"Pixabay API request failed with status code {pixabay_response.status_code}.")
         except Exception as e:
             print(f"Pixabay API error: {e}")
-    
-    # Fallback: use a static dictionary of images tuned for a semi truck company
+
+    # 3. Final fallback: Use a curated dictionary of trucking images
     fallback_images = {
-        "semi": "https://images.unsplash.com/photo-1563720224159-54a129f2d10a?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "truck": "https://images.unsplash.com/photo-1519003722824-194d4455a60c?ixlib=rb-4.0.3",
-        "trucking": "https://images.unsplash.com/photo-1579931773327-5eac23628e9e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "freight": "https://images.unsplash.com/photo-1505039361124-8e2e63c16029?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "diesel": "https://images.unsplash.com/photo-1573059476447-50c361b0e1dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "fleet": "https://images.unsplash.com/photo-1588411393236-d2827123e3e6?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "highway": "https://images.unsplash.com/photo-1519648023493-d82b5f8d7b8a?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "truck": "https://images.unsplash.com/photo-1600718379869-2369a853e8dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "trucking": "https://images.unsplash.com/photo-1599949181073-2f041dff3d26?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "freight": "https://images.unsplash.com/photo-1600421608503-b85c3d50d68f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "diesel": "https://images.unsplash.com/photo-1622035284672-7c4c5cf27e44?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "fleet": "https://images.unsplash.com/photo-1591392932620-f3d1b3e283a6?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "highway": "https://images.unsplash.com/photo-1571203373313-0a5bfa9d1c59?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
     }
-    
-    # Try matching specific keywords from the topic title to select an image
     topic_lower = topic_title.lower()
-    for keyword, image_url in fallback_images.items():
+    for keyword, url in fallback_images.items():
         if keyword in topic_lower:
-            print(f"Selected fallback image for keyword: {keyword}")
-            return image_url
-    
-    # Broad category matching tuned for a semi truck company
-    if any(word in topic_lower for word in ["cargo", "freight", "shipment", "logistics", "distribution"]):
-        print("Matched broad category: freight/logistics")
-        return fallback_images.get("freight")
-    if any(word in topic_lower for word in ["semi", "trucking", "truck", "diesel", "highway"]):
-        print("Matched broad category: trucking/semi")
-        return fallback_images.get("semi truck")
-    
-    # Default fallback image if no match is found
+            print(f"Using fallback image for keyword: {keyword}")
+            return url
+
     print("Using default fallback image")
-    return fallback_images.get("semi", "")
+    return fallback_images.get("truck", "")
 
 def generate_blog_post(topic):
     """
