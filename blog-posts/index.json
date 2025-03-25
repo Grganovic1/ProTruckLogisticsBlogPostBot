@@ -1,5 +1,35 @@
 [
   {
+    "id": 1742889762,
+    "title": "Rising Fuel Costs and Their Impact on the Trucking Industry",
+    "excerpt": "## The Impact of Rising Fuel Costs on the Trucking Industry",
+    "date": "March 25, 2025",
+    "category": "Preventative Maintenance",
+    "author": "Michael Chen",
+    "read_time": "10 min read",
+    "image": "https://images.unsplash.com/photo-1600718379869-2369a853e8dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
+  },
+  {
+    "id": 1742889754,
+    "title": "Adoption of Electric Trucks Accelerates Among Major Fleets",
+    "excerpt": "# Adoption of Electric Trucks Accelerates Among Major Fleets",
+    "date": "March 25, 2025",
+    "category": "Expedited Shipping",
+    "author": "Michael Chen",
+    "read_time": "9 min read",
+    "image": "https://images.unsplash.com/photo-1600718379869-2369a853e8dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
+  },
+  {
+    "id": 1742889740,
+    "title": "Artificial Intelligence Revolutionizes Supply Chain Management",
+    "excerpt": "# Artificial Intelligence Revolutionizes Supply Chain Management",
+    "date": "March 25, 2025",
+    "category": "Heavy Haul",
+    "author": "Michael Chen",
+    "read_time": "7 min read",
+    "image": "https://images.unsplash.com/photo-1600718379869-2369a853e8dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
+  },
+  {
     "id": 1742869257,
     "title": "Implementation of Artificial Intelligence for Supply Chain Optimization",
     "excerpt": "# Implementation of Artificial Intelligence for Supply Chain Optimization",
