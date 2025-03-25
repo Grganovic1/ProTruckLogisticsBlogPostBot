@@ -34,7 +34,7 @@ LOCAL_BLOG_DIR = Path("blog-posts")
 LOCAL_BLOG_DIR.mkdir(exist_ok=True)
 
 # Number of blog posts to generate
-POSTS_TO_GENERATE = 10
+POSTS_TO_GENERATE = 3
 
 # Model selection
 GPT_MODEL = "gpt-3.5-turbo"  # More cost-effective for regular content generation
@@ -119,22 +119,17 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 def get_current_logistics_topics():
     """
-    Fetches exactly 3 trending topics in logistics.
-    
-    Attempts:
-    1. Use GPT with web browsing capability to retrieve current trends.
-    2. If insufficient topics are returned, use GPT to generate realistic topics.
-    3. If still fewer than 3 topics, fill gaps by generating fallback topics based on random blog categories.
-    
-    Returns:
-      A list of 3 topic dictionaries, each with keys "title", "summary", and "relevance".
+    Fetches current trending topics in logistics using GPT with web search capabilities.
+    Falls back to GPT-generated realistic topics if web search fails.
+    Returns a list of news articles with titles and summaries.
     """
-    topics = []
     method_used = "Unknown"
-
-    # First try: Use GPT with web browsing capability
+    
+    # First try: Use GPT with tool use capability
     try:
         print("Attempting to get current logistics news via GPT with browsing capability...")
+        
+        # Updated tools format for web browsing
         tools = [
             {
                 "type": "function",
@@ -154,216 +149,283 @@ def get_current_logistics_topics():
                 }
             }
         ]
+        
+        # First message to call the search function
         first_response = client.chat.completions.create(
-            model=BROWSING_MODEL,
+            model=BROWSING_MODEL,  # Use a model that supports function calling
             messages=[{"role": "user", "content": "What are the latest news and trending topics in the trucking and logistics industry from the past week?"}],
             tools=tools,
             tool_choice={"type": "function", "function": {"name": "search_web"}}
         )
+        
+        # Check if we have a tool call in the response
         message = first_response.choices[0].message
+        
         if hasattr(message, 'tool_calls') and message.tool_calls:
+            # Get the search query
             tool_call = message.tool_calls[0]
             function_args = json.loads(tool_call.function.arguments)
             search_query = function_args.get("query")
+            
             print(f"Searching for: {search_query}")
+            
+            # Second call to process the "search results"
             second_response = client.chat.completions.create(
                 model=BROWSING_MODEL,
                 messages=[
                     {"role": "user", "content": "What are the latest news and trending topics in the trucking and logistics industry from the past week?"},
                     message,
-                    {"role": "tool", "tool_call_id": tool_call.id, "name": "search_web", "content": "Search results found many recent articles about logistics industry trends."},
-                    {"role": "user", "content": """Based on these search results, provide 5 significant developments or trends in the trucking and logistics industry that a logistics company might want to write about in their blog.
-
-For each topic, provide:
-1. A specific headline
-2. A brief summary (1-2 sentences)
-3. Why this topic matters to logistics professionals
-
-Format your response as JSON with an array of objects containing "title", "summary", and "relevance" keys.
-"""}
+                    {
+                        "role": "tool", 
+                        "tool_call_id": tool_call.id,
+                        "name": "search_web",
+                        "content": "Search results found many recent articles about logistics industry trends."
+                    },
+                    {
+                        "role": "user",
+                        "content": """Based on these search results, provide 5 significant developments or trends in the trucking and logistics industry that a logistics company might want to write about in their blog.
+                        
+                        For each topic, provide:
+                        1. A specific headline
+                        2. A brief summary (1-2 sentences)
+                        3. Why this topic matters to logistics professionals
+                        
+                        Format your response as JSON with an array of objects containing "title", "summary", and "relevance" keys."""
+                    }
                 ]
             )
+            
             content = second_response.choices[0].message.content
+            
+            # Try to extract JSON from the response
             try:
+                # Check for JSON code blocks
                 json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
+                    # Look for array pattern
                     json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
-                    json_str = json_match.group(1) if json_match else content
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        json_str = content
+                
                 topics = json.loads(json_str)
-                print(f"Successfully retrieved {len(topics)} topics via GPT Web Search")
+                print(f"Successfully retrieved {len(topics)} trending topics via GPT")
                 method_used = "GPT Web Search"
+                return topics
             except json.JSONDecodeError as e:
                 print(f"Failed to parse JSON from GPT response: {e}")
+                # Continue to second try below
         else:
             print("No tool calls in the response")
+    
     except Exception as e:
         print(f"Error using GPT with web search capability: {e}")
+    
+    # Second try: Generate realistic trending topics with GPT
+    try:
+        print("Attempting to generate realistic trending topics with GPT...")
+        
+        current_date = datetime.now().strftime("%B %d, %Y")
+        
+        prompt = f"""
+        Today is {current_date}. Based on current industry trends and economic conditions, 
+        what are 5 realistic trending topics in the trucking and logistics industry that would 
+        make good blog post topics?
 
-    # Second try: Use GPT to generate realistic trending topics if we have fewer than 3 topics
-    if not topics or len(topics) < 3:
-        try:
-            print("Attempting to generate realistic trending topics with GPT...")
-            current_date = datetime.now().strftime("%B %d, %Y")
-            prompt = f"""
-Today is {current_date}. Based on current industry trends and economic conditions, 
-what are 5 realistic trending topics in the trucking and logistics industry that would 
-make good blog post topics?
+        For each topic, include:
+        1. A specific headline/title
+        2. A brief summary of the trend/issue
+        3. Why this topic is relevant right now
 
-For each topic, include:
-1. A specific headline/title
-2. A brief summary of the trend/issue
-3. Why this topic is relevant right now
+        Focus on topics that would be relevant in 2025 such as:
+        - New regulations or compliance issues
+        - Technology adoption in logistics
+        - Fuel prices and sustainability initiatives
+        - Supply chain resilience
+        - Labor market trends for drivers
+        - Market conditions affecting shipping rates
 
-Format your response as a JSON array with objects containing "title", "summary", and "relevance" keys.
-"""
-            response = client.chat.completions.create(
-                model=GPT_MODEL,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            content = response.choices[0].message.content
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+        Format your response as a JSON array with objects containing "title", "summary", and "relevance" keys.
+        """
+        
+        response = client.chat.completions.create(
+            model=GPT_MODEL,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        content = response.choices[0].message.content
+        
+        # Try to extract JSON
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
             else:
-                json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
-                json_str = json_match.group(1) if json_match else content
-            generated_topics = json.loads(json_str)
-            print(f"Successfully generated {len(generated_topics)} topics via GPT Generation")
-            topics.extend(generated_topics)
+                json_str = content
+        
+        try:
+            topics = json.loads(json_str)
+            print(f"Successfully generated {len(topics)} trending topics via GPT")
             method_used = "GPT Generated Trends"
-        except Exception as e:
-            print(f"Error generating trending topics: {e}")
-
-    # If still fewer than 3 topics, use fallback topics based on random blog categories
-    if len(topics) < 3:
-        print("Insufficient topics retrieved. Generating fallback topics based on blog categories...")
-        additional_needed = 3 - len(topics)
-        fallback_categories = random.sample(BLOG_CATEGORIES, additional_needed)
-        for category in fallback_categories:
-            fallback_prompt = f"""
-Based on current logistics trends, provide a blog post topic idea for the category "{category}".
-Include:
-- A catchy headline/title
-- A brief summary (1-2 sentences) of the trend or issue
-- Why this topic is relevant now
-Format your response as a JSON object with keys "title", "summary", and "relevance".
-"""
-            try:
-                response = client.chat.completions.create(
-                    model=GPT_MODEL,
-                    messages=[{"role": "user", "content": fallback_prompt}]
-                )
-                content = response.choices[0].message.content.strip()
-                json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
-                if json_match:
-                    json_str = json_match.group(1)
-                else:
-                    json_match = re.search(r'(\{.*\})', content, re.DOTALL)
-                    json_str = json_match.group(1) if json_match else content
-                fallback_topic = json.loads(json_str)
-                topics.append(fallback_topic)
-            except Exception as e:
-                print(f"Error generating fallback topic for category {category}: {e}")
-                topics.append({
-                    "title": f"Trending {category} Insights for 2025",
-                    "summary": f"An overview of key trends and challenges in {category.lower()} that logistics professionals should watch in 2025.",
-                    "relevance": f"This topic is essential for staying competitive in the evolving field of {category.lower()}."
+            return topics
+        except:
+            print("Failed to parse JSON from GPT trend generation")
+            # Continue to fallback below
+    except Exception as e:
+        print(f"Error generating trending topics: {e}")
+    
+    # Third try and fallback: Use Transport Topics or Logistics Management websites
+    try:
+        print("Attempting to fetch news from logistics websites...")
+        news_articles = []
+        
+        # Try Transport Topics
+        response = requests.get("https://www.ttnews.com/articles/logistics", timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            articles = soup.find_all('article', class_='article-card')
+            
+            for article in articles[:5]:  # Get top 5 articles
+                title_element = article.find('h2')
+                title = title_element.text.strip() if title_element else "Unknown Title"
+                
+                summary_element = article.find('div', class_='field--name-field-deckhead')
+                summary = summary_element.text.strip() if summary_element else ""
+                
+                # Create relevance if missing
+                relevance = f"This topic is relevant to logistics professionals because it addresses current industry challenges and opportunities in {datetime.now().year}."
+                
+                news_articles.append({
+                    "title": title, 
+                    "summary": summary, 
+                    "relevance": relevance
                 })
-
-    # If more than 3 topics, randomly pick 3
-    if len(topics) > 3:
-        topics = random.sample(topics, 3)
-
-    print(f"Final topic selection ({len(topics)} topics): {[t['title'] for t in topics]}")
-    return topics
+        
+        # Try Logistics Management as backup
+        if len(news_articles) < 3:
+            response = requests.get("https://www.logisticsmgmt.com/topic/category/transportation", timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                articles = soup.find_all('article')
+                
+                for article in articles[:5]:
+                    title_element = article.find('h2') or article.find('h3')
+                    title = title_element.text.strip() if title_element else "Unknown Title"
+                    
+                    summary_element = article.find('p')
+                    summary = summary_element.text.strip() if summary_element else ""
+                    
+                    # Create relevance if missing
+                    relevance = f"This industry development is important for logistics companies to consider when planning their operations and strategies in {datetime.now().year}."
+                    
+                    news_articles.append({
+                        "title": title, 
+                        "summary": summary, 
+                        "relevance": relevance
+                    })
+        
+        if len(news_articles) > 0:
+            print(f"Successfully fetched {len(news_articles)} articles from logistics websites")
+            method_used = "Website Scraping"
+            return news_articles
+    except Exception as e:
+        print(f"Error fetching from logistics websites: {e}")
+    
+    # Final fallback: Use predefined topics
+    print("Using fallback predefined topics")
+    method_used = "Predefined Topics"
+    fallback_topics = [
+        {
+            "title": "Navigating 2025's Fuel Price Volatility: Strategies for Logistics Providers",
+            "summary": "With fuel prices fluctuating due to global conflicts and environmental regulations, logistics companies must implement adaptive strategies to maintain profitability.",
+            "relevance": "Rising fuel costs directly impact margins in an industry where fuel represents 30-40% of operational expenses."
+        },
+        {
+            "title": "Electric Fleet Transition: Real-World ROI Data from Early Adopters",
+            "summary": "New data reveals the actual cost savings and operational impacts from logistics companies that were early adopters of electric trucks.",
+            "relevance": "As more manufacturers release commercial electric vehicles, fleet managers need concrete data to make informed transition decisions."
+        },
+        {
+            "title": "AI-Powered Route Optimization: The New Standard in Last-Mile Delivery",
+            "summary": "Advanced AI algorithms are revolutionizing route planning, reducing delivery times by up to 25% and cutting fuel consumption.",
+            "relevance": "With consumer expectations for faster delivery continuing to rise, logistics companies must leverage technology to maintain competitive advantages."
+        },
+        {
+            "title": "Driver Retention Crisis: Innovative Solutions Beyond Compensation",
+            "summary": "The persistent driver shortage is forcing companies to look beyond higher pay to lifestyle improvements, technology aids, and career development.",
+            "relevance": "Driver turnover remains a critical issue affecting reliability and operational continuity across the industry."
+        },
+        {
+            "title": "Regional Warehousing Expansion: The New Supply Chain Resilience Strategy",
+            "summary": "Companies are investing in smaller, strategically located warehouses to minimize disruption risks and optimize delivery times.",
+            "relevance": "After years of supply chain disruptions, businesses are prioritizing resilience over pure cost efficiency in their logistics networks."
+        }
+    ]
+    
+    return fallback_topics
 
 def get_relevant_image(topic):
     """
-    Gets a relevant image URL based on the topic for a semi truck company.
-    It first attempts to use Google Custom Search to retrieve an image.
-    If that fails, it falls back to the free Pixabay API.
-    If both external methods fail, it uses a curated fallback dictionary.
+    Gets a relevant image URL based on the topic.
+    Uses a reliable set of pre-defined logistics images categorized by keywords.
+    Returns the image URL and the matched keyword.
     """
     print(f"Finding relevant image for topic: {topic}")
-    # Extract the topic title for search
-    topic_title = topic.get("title", topic) if isinstance(topic, dict) else topic
-    search_query = topic_title
-
-    # 1. Try Google Custom Search API
-    GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-    GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID")
-    if GOOGLE_API_KEY and GOOGLE_CSE_ID:
-        try:
-            google_params = {
-                "key": GOOGLE_API_KEY,
-                "cx": GOOGLE_CSE_ID,
-                "q": search_query,
-                "searchType": "image",
-                "num": 1,
-                "safe": "active"
-            }
-            google_response = requests.get("https://www.googleapis.com/customsearch/v1", params=google_params, timeout=10)
-            if google_response.status_code == 200:
-                google_data = google_response.json()
-                items = google_data.get("items", [])
-                if items:
-                    image_url = items[0].get("link")
-                    if image_url:
-                        print("Using Google Custom Search image.")
-                        return image_url
-                else:
-                    print("Google Custom Search returned no results.")
-            else:
-                print(f"Google Custom Search request failed with status code {google_response.status_code}.")
-        except Exception as e:
-            print(f"Google Custom Search error: {e}")
-
-    # 2. Fallback: Try Pixabay API
-    PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
-    if PIXABAY_API_KEY:
-        try:
-            pixabay_params = {
-                "key": PIXABAY_API_KEY,
-                "q": search_query,
-                "image_type": "photo",
-                "per_page": 1,
-                "safesearch": "true"
-            }
-            pixabay_response = requests.get("https://pixabay.com/api/", params=pixabay_params, timeout=10)
-            if pixabay_response.status_code == 200:
-                pixabay_data = pixabay_response.json()
-                hits = pixabay_data.get("hits", [])
-                if hits:
-                    image_url = hits[0].get("webformatURL")
-                    if image_url:
-                        print("Using Pixabay API image.")
-                        return image_url
-                else:
-                    print("Pixabay API returned no results.")
-            else:
-                print(f"Pixabay API request failed with status code {pixabay_response.status_code}.")
-        except Exception as e:
-            print(f"Pixabay API error: {e}")
-
-    # 3. Final fallback: Use a curated dictionary of trucking images
-    fallback_images = {
-        "truck": "https://images.unsplash.com/photo-1600718379869-2369a853e8dd?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "trucking": "https://images.unsplash.com/photo-1599949181073-2f041dff3d26?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "freight": "https://images.unsplash.com/photo-1600421608503-b85c3d50d68f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "diesel": "https://images.unsplash.com/photo-1622035284672-7c4c5cf27e44?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "fleet": "https://images.unsplash.com/photo-1591392932620-f3d1b3e283a6?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-        "highway": "https://images.unsplash.com/photo-1571203373313-0a5bfa9d1c59?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
+    
+    # Create a dictionary of reliable logistics images categorized by keyword
+    # These are verified working Unsplash images that won't return 404 errors
+    images = {
+        "fuel": "https://images.unsplash.com/photo-1545249390-6bdfa286032f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "electric": "https://images.unsplash.com/photo-1593941707882-a5bba13938c2?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "ai": "https://images.unsplash.com/photo-1677442136019-21780ecad995?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "driver": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "warehouse": "https://images.unsplash.com/photo-1553413077-190dd305871c?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "supply chain": "https://images.unsplash.com/photo-1566633806327-68e152aaf26d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "technology": "https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "truck": "https://images.unsplash.com/photo-1519003722824-194d4455a60c?ixlib=rb-4.0.3",
+        "delivery": "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "safety": "https://images.unsplash.com/photo-1577041677443-8bbdfd8cce62?ixlib=rb-4.0.3",
+        "sustainability": "https://images.unsplash.com/photo-1592833159067-4173416fc26a?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "logistics": "https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?ixlib=rb-4.0.3",
+        "regulations": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "e-commerce": "https://images.unsplash.com/photo-1584536902949-fae88d5950dc?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "global": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "automation": "https://images.unsplash.com/photo-1563203369-26f2e4a5ccf7?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
+        "fleet": "https://images.unsplash.com/photo-1588411393236-d2827123e3e6?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
     }
+    
+    # Extract title for matching if topic is a dictionary
+    topic_title = topic.get('title', topic) if isinstance(topic, dict) else topic
     topic_lower = topic_title.lower()
-    for keyword, url in fallback_images.items():
+    
+    # Look for keyword matches in the topic
+    for keyword, image_url in images.items():
         if keyword in topic_lower:
-            print(f"Using fallback image for keyword: {keyword}")
-            return url
-
-    print("Using default fallback image")
-    return fallback_images.get("truck", "")
+            print(f"Selected image for keyword: {keyword}")
+            return image_url
+    
+    # If no specific match, try to categorize the topic
+    if any(word in topic_lower for word in ["price", "cost", "financial", "economic", "market"]):
+        return images["logistics"]  # Logistics (financial context)
+    
+    if any(word in topic_lower for word in ["green", "environment", "carbon", "emission"]):
+        return images["sustainability"]  # Sustainability (environmental context)
+    
+    if any(word in topic_lower for word in ["autonomous", "robot", "automation", "digital"]):
+        return images["technology"]  # Technology (automation context)
+    
+    if any(word in topic_lower for word in ["driver", "trucker", "operator", "personnel"]):
+        return images["driver"]  # Driver-related topics
+    
+    # Default to generic logistics image
+    print("Using default logistics image")
+    return images["logistics"]
 
 def generate_blog_post(topic):
     """
@@ -423,7 +485,7 @@ def generate_blog_post(topic):
     
     Follow this structure:
     1. An engaging introduction explaining why this topic matters to logistics and transportation professionals
-    2. 2-3 main sections wiAth descriptive headings (using H2 tags) covering different aspects of the topic
+    2. 2-3 main sections with descriptive headings (using H2 tags) covering different aspects of the topic
     3. Include subsections with H3 tags where appropriate
     4. For each section, include practical insights, data points (you can create realistic fictional data), and actionable advice
     5. Use bullet points or numbered lists where appropriate to break up text
@@ -555,6 +617,27 @@ def create_blog_post_html(post):
     
     template = template.replace('<h4 id="author-name" class="author-name">Author Name</h4>', 
                               f'<h4 id="author-name" class="author-name">{post["author"]}</h4>')
+    
+    template = template.replace('<p id="author-position" class="author-position">Position</p>', 
+                              f'<p id="author-position" class="author-position">{post["author_position"]}</p>')
+    
+    template = template.replace('<p id="author-bio">Author bio will be displayed here.</p>', 
+                              f'<p id="author-bio">{post["author_bio"]}</p>')
+    
+    # Update share buttons with the post URL
+    share_url = f"https://protrucklogistics.org/blog-posts/post-{post_id}.html"  # Update with your actual domain
+    
+    template = template.replace('<a href="#" class="share-button facebook">', 
+                              f'<a href="https://www.facebook.com/sharer/sharer.php?u={share_url}" target="_blank" class="share-button facebook">')
+    
+    template = template.replace('<a href="#" class="share-button twitter">', 
+                              f'<a href="https://twitter.com/intent/tweet?url={share_url}&text={post["title"]}" target="_blank" class="share-button twitter">')
+    
+    template = template.replace('<a href="#" class="share-button linkedin">', 
+                              f'<a href="https://www.linkedin.com/shareArticle?mini=true&url={share_url}&title={post["title"]}" target="_blank" class="share-button linkedin">')
+    
+    template = template.replace('<a href="#" class="share-button email">', 
+                              f'<a href="mailto:?subject={post["title"]}&body=Check out this article: {share_url}" class="share-button email">')
     
     template = template.replace('<p id="author-position" class="author-position">Position</p>', 
                               f'<p id="author-position" class="author-position">{post["author_position"]}</p>')
