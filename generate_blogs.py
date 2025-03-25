@@ -34,7 +34,7 @@ LOCAL_BLOG_DIR = Path("blog-posts")
 LOCAL_BLOG_DIR.mkdir(exist_ok=True)
 
 # Number of blog posts to generate
-POSTS_TO_GENERATE = 1
+POSTS_TO_GENERATE = 10
 
 # Model selection
 GPT_MODEL = "gpt-3.5-turbo"  # More cost-effective for regular content generation
