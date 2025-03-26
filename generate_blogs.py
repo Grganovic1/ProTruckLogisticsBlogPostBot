@@ -34,7 +34,7 @@ LOCAL_BLOG_DIR = Path("blog-posts")
 LOCAL_BLOG_DIR.mkdir(exist_ok=True)
 
 # Number of blog posts to generate
-POSTS_TO_GENERATE = 3
+POSTS_TO_GENERATE = 1
 
 # Model selection
 GPT_MODEL = "gpt-3.5-turbo"  # More cost-effective for regular content generation
@@ -446,144 +446,110 @@ def get_current_logistics_topics():
 
 def get_relevant_image(topic):
     """
-    Gets a relevant image URL based on the topic.
-    Uses a curated set of semi-truck and commercial trucking images.
+    Generates a relevant image URL for the topic using DALL-E or similar image generation.
+    If that fails, uses a curated set of semi-truck and commercial trucking images.
     Returns the image URL.
     """
-    print(f"Finding relevant image for topic: {topic}")
+    print(f"Generating image for topic: {topic}")
     
-    # Create a dictionary of verified semi-truck and logistics images categorized by keyword
-    # These are specifically selected for a semi-truck logistics company
-    semi_truck_images = {
-        # Semi-truck specific images
-        "semi-truck": [
-            "https://images.unsplash.com/photo-1586541250441-b7e0f1d7e6a6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Blue semi on highway
-            "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Semi truck front view
-            "https://images.unsplash.com/photo-1519003722824-194d4455a60c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Red semi truck
-            "https://images.unsplash.com/photo-1595246007497-68e1e9460d61?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Semi truck on road
-            "https://images.unsplash.com/photo-1626082895520-9b931011888e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Semi truck with sunset
-        ],
-        
-        # Driver focused images
-        "driver": [
-            "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Truck driver
-            "https://images.unsplash.com/photo-1617417536596-7c3133e5d6c2?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Driver in cab
-            "https://images.unsplash.com/photo-1577041677443-8bbdfd8cce62?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Driver with clipboard
-        ],
-        
-        # Fleet management images
-        "fleet": [
-            "https://images.unsplash.com/photo-1588411393236-d2827123e3e6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Multiple trucks
-            "https://images.unsplash.com/photo-1616432043562-3e195501e3d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Truck yard
-            "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Fleet manager
-        ],
-        
-        # Maintenance and parts
-        "maintenance": [
-            "https://images.unsplash.com/photo-1530046339915-78e95328dd1f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Mechanic
-            "https://images.unsplash.com/photo-1580983218765-f663bec07b37?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Engine repair
-            "https://images.unsplash.com/photo-1599256872237-5dcc0fbe9668?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Truck parts
-        ],
-        
-        # Fuel and energy
-        "fuel": [
-            "https://images.unsplash.com/photo-1545249390-6bdfa286032f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Diesel pump
-            "https://images.unsplash.com/photo-1544981037-4e18eaae4fcd?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Fuel station
-            "https://images.unsplash.com/photo-1581098365948-6a5a912b7a49?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Truck at fuel station
-        ],
-        
-        # Technology and innovation
-        "technology": [
-            "https://images.unsplash.com/photo-1581092921461-7031e4f48eda?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Truck dashboard
-            "https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # GPS navigation
-            "https://images.unsplash.com/photo-1593941707882-a5bba13938c2?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Electric truck
-        ],
-        
-        # Logistics and supply chain
-        "logistics": [
-            "https://images.unsplash.com/photo-1566633806327-68e152aaf26d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Warehouse with trucks
-            "https://images.unsplash.com/photo-1553413077-190dd305871c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Distribution center
-            "https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Logistics map
-        ],
-        
-        # Safety and compliance
-        "safety": [
-            "https://images.unsplash.com/photo-1517048676732-d65bc937f952?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Safety meeting
-            "https://images.unsplash.com/photo-1589739900266-43b2843f4c12?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Safety vest
-            "https://images.unsplash.com/photo-1531482615713-2afd69097998?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Clipboard with checklist
-        ],
-        
-        # Roads and highways
-        "road": [
-            "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Highway
-            "https://images.unsplash.com/photo-1536846511313-4b07b637b5c4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80", # Mountain road
-            "https://images.unsplash.com/photo-1473445730015-841f29a0620f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"  # Road with truck
-        ]
-    }
-    
-    # Extract title and summary for matching if topic is a dictionary
+    # Extract title and summary for the prompt if topic is a dictionary
     topic_title = topic.get('title', '') if isinstance(topic, dict) else topic
     topic_summary = topic.get('summary', '') if isinstance(topic, dict) else ''
     
-    # Combine title and summary for better keyword matching
-    topic_text = (topic_title + ' ' + topic_summary).lower()
-    
-    # Define keyword mapping to image categories
-    keyword_mapping = {
-        # Semi-truck specific
-        "semi-truck": ["semi", "truck", "tractor", "trailer", "rig", "18-wheeler", "big rig", "commercial vehicle"],
+    # Try to generate an image using DALL-E
+    try:
+        print("Generating image with DALL-E...")
         
-        # Driver focused
-        "driver": ["driver", "operator", "trucker", "behind the wheel", "cdl", "driving", "recruit", "retention", "shortage"],
+        # Create a prompt for image generation based on the topic
+        image_prompt = f"""
+        Create a professional, photorealistic image for a logistics blog post titled: "{topic_title}"
         
-        # Fleet management
-        "fleet": ["fleet", "manage", "dispatch", "yard", "terminal", "operations", "tracking"],
+        The image should:
+        - Feature a semi-truck or commercial trucking vehicle
+        - Be suitable for a professional logistics company blog
+        - Have good lighting and composition
+        - Look realistic and high-quality
+        - Relate to the topic: {topic_summary}
         
-        # Maintenance and parts
-        "maintenance": ["maintenance", "repair", "service", "parts", "breakdown", "mechanic", "diagnostic", "engine", "tire"],
+        Style: Photorealistic, professional photography, not illustrated or cartoon
+        """
         
-        # Fuel and energy
-        "fuel": ["fuel", "diesel", "gas", "petrol", "energy", "efficiency", "consumption", "mileage", "electric", "ev", "charging"],
+        # Generate image using DALL-E
+        response = client.images.generate(
+            model="dall-e-3",  # Use the latest DALL-E model
+            prompt=image_prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
         
-        # Technology and innovation
-        "technology": ["technology", "tech", "digital", "software", "app", "ai", "autonomous", "automation", "innovation", "smart", "iot", "telematics"],
+        # Get the URL from the response
+        image_url = response.data[0].url
+        print(f"Successfully generated image with DALL-E")
+        return image_url
         
-        # Logistics and supply chain
-        "logistics": ["logistics", "supply chain", "shipping", "freight", "cargo", "delivery", "transport", "distribution", "warehouse", "inventory"],
+    except Exception as e:
+        print(f"Error generating image with DALL-E: {e}")
         
-        # Safety and compliance
-        "safety": ["safety", "compliance", "regulation", "rule", "law", "dot", "fmcsa", "eld", "hours of service", "hos", "inspection"],
-        
-        # Roads and highways
-        "road": ["road", "highway", "interstate", "route", "journey", "travel", "mile", "distance"]
-    }
-    
-    # Track matched categories and their strength
-    category_matches = {}
-    
-    # Look for keyword matches in the topic text
-    for category, keywords in keyword_mapping.items():
-        for keyword in keywords:
-            if keyword in topic_text:
-                # Count occurrences to determine match strength
-                count = topic_text.count(keyword)
-                if category in category_matches:
-                    category_matches[category] += count
-                else:
-                    category_matches[category] = count
-    
-    # If we have matches, use the strongest match
-    if category_matches:
-        # Sort by match strength (highest first)
-        best_category = sorted(category_matches.items(), key=lambda x: x[1], reverse=True)[0][0]
-        print(f"Selected image category: {best_category} based on keyword matches")
-        
-        # Get a random image from the best matching category
-        return random.choice(semi_truck_images[best_category])
-    
-    # If no specific match, default to a semi-truck image
-    print("No specific match found, using default semi-truck image")
-    return random.choice(semi_truck_images["semi-truck"])
+        # Fallback to Unsplash API for a relevant image
+        try:
+            print("Falling back to Unsplash API...")
+            
+            # Create search terms based on the topic
+            search_terms = []
+            
+            # Add specific search terms based on topic content
+            if "driver" in topic_title.lower() or "driver" in topic_summary.lower():
+                search_terms.append("truck driver")
+            elif "maintenance" in topic_title.lower() or "maintenance" in topic_summary.lower():
+                search_terms.append("truck maintenance")
+            elif "fuel" in topic_title.lower() or "fuel" in topic_summary.lower():
+                search_terms.append("truck fuel")
+            elif "safety" in topic_title.lower() or "safety" in topic_summary.lower():
+                search_terms.append("truck safety")
+            elif "technology" in topic_title.lower() or "technology" in topic_summary.lower():
+                search_terms.append("truck technology")
+            else:
+                search_terms.append("semi truck")
+                
+            # Add a general term as backup
+            search_terms.append("commercial truck")
+            
+            # Try each search term until we get a result
+            for term in search_terms:
+                try:
+                    # Use Unsplash API to get a relevant image
+                    # Note: In production, you should use your Unsplash API key
+                    unsplash_url = f"https://api.unsplash.com/photos/random?query={term}&orientation=landscape&client_id=YOUR_UNSPLASH_API_KEY"
+                    
+                    # For demo purposes, we'll use a direct Unsplash URL format that doesn't require API key
+                    # This is just a fallback and should be replaced with proper API usage
+                    direct_unsplash_urls = {
+                        "truck driver": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "truck maintenance": "https://images.unsplash.com/photo-1530046339915-78e95328dd1f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "truck fuel": "https://images.unsplash.com/photo-1545249390-6bdfa286032f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "truck safety": "https://images.unsplash.com/photo-1517048676732-d65bc937f952?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "truck technology": "https://images.unsplash.com/photo-1581092921461-7031e4f48eda?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "semi truck": "https://images.unsplash.com/photo-1586541250441-b7e0f1d7e6a6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
+                        "commercial truck": "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"
+                    }
+                    
+                    if term in direct_unsplash_urls:
+                        print(f"Using Unsplash image for term: {term}")
+                        return direct_unsplash_urls[term]
+                        
+                except Exception as unsplash_error:
+                    print(f"Error with Unsplash for term '{term}': {unsplash_error}")
+                    continue
+                    
+            # If all else fails, use a reliable semi-truck image
+            print("Using default semi-truck image")
+            return "https://images.unsplash.com/photo-1586541250441-b7e0f1d7e6a6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"
+            
+        except Exception as fallback_error:
+            print(f"Error in fallback image selection: {fallback_error}")
+            # Absolute last resort - a reliable semi-truck image
+            return "https://images.unsplash.com/photo-1586541250441-b7e0f1d7e6a6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80"
 
 def generate_blog_post(topic):
     """
