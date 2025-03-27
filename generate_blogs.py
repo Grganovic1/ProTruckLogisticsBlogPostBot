@@ -446,8 +446,7 @@ def get_current_logistics_topics():
 
 def get_relevant_image(topic):
     """
-    Generates a relevant image URL for the topic using DALL-E or similar image generation.
-    If that fails, uses a curated set of semi-truck and commercial trucking images.
+    Generates a relevant image URL for the topic using DALL-E.
     Returns the image URL.
     """
     print(f"Generating image for topic: {topic}")
@@ -456,67 +455,35 @@ def get_relevant_image(topic):
     topic_title = topic.get('title', '') if isinstance(topic, dict) else topic
     topic_summary = topic.get('summary', '') if isinstance(topic, dict) else ''
     
-    # Try to generate an image using DALL-E
-    try:
-        print("Generating image with DALL-E...")
-        
-        # Create a prompt for image generation based on the topic
-        image_prompt = f"""
-        Create a professional, photorealistic image for a logistics blog post titled: "{topic_title}"
-        
-        The image should:
-        - Feature a semi-truck or commercial trucking vehicle
-        - Be suitable for a professional logistics company blog
-        - Have good lighting and composition
-        - Look realistic and high-quality
-        - Relate to the topic: {topic_summary}
-        
-        Style: Photorealistic, professional photography, not illustrated or cartoon
-        """
-        
-        # Generate image using DALL-E
-        response = client.images.generate(
-            model="dall-e-3",  # Use the latest DALL-E model
-            prompt=image_prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1
-        )
-        
-        # Get the URL from the response
-        image_url = response.data[0].url
-        print(f"Successfully generated image with DALL-E")
-        return image_url
-        
-    except Exception as e:
-        print(f"Error generating image with DALL-E: {e}")
-        
-        # Fallback to a curated dictionary of reliable semi-truck and commercial trucking images
-        fallback_images = {
-            "driver": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "maintenance": "https://images.unsplash.com/photo-1530046339915-78e95328dd1f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "fuel": "https://images.unsplash.com/photo-1545249390-6bdfa286032f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "safety": "https://images.unsplash.com/photo-1517048676732-d65bc937f952?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "technology": "https://images.unsplash.com/photo-1581092921461-7031e4f48eda?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "semi truck": "https://images.unsplash.com/photo-1586541250441-b7e0f1d7e6a6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "commercial truck": "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80",
-            "electric": "https://images.unsplash.com/photo-1593941707882-a5bba13938c2?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-            "ai": "https://images.unsplash.com/photo-1677442136019-21780ecad995?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-            "warehouse": "https://images.unsplash.com/photo-1553413077-190dd305871c?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",
-            "logistics": "https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?ixlib=rb-4.0.3",
-            "regulations": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
-        }
-        
-        # Look for keyword matches in the topic
-        topic_text = (topic_title + ' ' + topic_summary).lower()
-        for keyword, image_url in fallback_images.items():
-            if keyword in topic_text:
-                print(f"Using fallback image for keyword: {keyword}")
-                return image_url
-        
-        # If no keyword match, use a default semi-truck image
-        print("Using default semi-truck image")
-        return fallback_images["semi truck"]
+    print("Generating image with DALL-E...")
+    
+    # Create a prompt for image generation based on the topic
+    image_prompt = f"""
+    Create a professional, photorealistic image for a logistics blog post titled: "{topic_title}"
+    
+    The image should:
+    - Feature a semi-truck or commercial trucking vehicle
+    - Be suitable for a professional logistics company blog
+    - Have good lighting and composition
+    - Look realistic and high-quality
+    - Relate to the topic: {topic_summary}
+    
+    Style: Photorealistic, professional photography, not illustrated or cartoon
+    """
+    
+    # Generate image using DALL-E
+    response = client.images.generate(
+        model="dall-e-3",  # Use the latest DALL-E model
+        prompt=image_prompt,
+        size="1024x1024",
+        quality="standard",
+        n=1
+    )
+    
+    # Get the URL from the response
+    image_url = response.data[0].url
+    print(f"Successfully generated image with DALL-E: {image_url}")
+    return image_url
 
 def generate_blog_post(topic):
     """
