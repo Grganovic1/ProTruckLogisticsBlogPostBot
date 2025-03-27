@@ -446,44 +446,65 @@ def get_current_logistics_topics():
 
 def get_relevant_image(topic):
     """
-    Generates a relevant image URL for the topic using DALL-E.
-    Returns the image URL.
+    First generates a custom DALL-E prompt based on the blog post topic,
+    then uses that prompt to generate a unique image.
     """
-    print(f"Generating image for topic: {topic}")
+    print(f"Generating custom image for topic: {topic}")
     
     # Extract title and summary for the prompt if topic is a dictionary
     topic_title = topic.get('title', '') if isinstance(topic, dict) else topic
     topic_summary = topic.get('summary', '') if isinstance(topic, dict) else ''
+    topic_relevance = topic.get('relevance', '') if isinstance(topic, dict) else ''
     
-    print("Generating image with DALL-E...")
+    # Generate a custom DALL-E prompt using GPT
+    print("Creating custom image prompt with GPT...")
     
-    # Create a prompt for image generation based on the topic
-    image_prompt = f"""
-    Create a professional, photorealistic image for a logistics blog post titled: "{topic_title}"
+    prompt_creation_prompt = f"""
+    Create a detailed and specific prompt for DALL-E to generate an image for a blog post about:
     
-    The image should:
-    - Feature a semi-truck or commercial trucking vehicle
-    - Be suitable for a professional logistics company blog
-    - Have good lighting and composition
-    - Look realistic and high-quality
-    - Relate to the topic: {topic_summary}
+    Title: "{topic_title}"
+    Summary: {topic_summary}
+    Relevance: {topic_relevance}
     
-    Style: Photorealistic, professional photography, not illustrated or cartoon
+    The prompt should:
+    1. Describe a specific, visually interesting scene related to the blog topic
+    2. Include details about composition, perspective, lighting, mood, and setting
+    3. Be highly specific to avoid generic stock photo aesthetics
+    4. Ensure the image will clearly relate to commercial trucking and logistics
+    5. Include clear visual elements that connect to the blog's main points
+    6. Specify photorealistic style and professional quality
+    7. Be unexpected and original - avoid clichéd trucking images
+    
+    Keep the prompt between 100-150 words for optimal results.
+    Output only the prompt itself with no additional text or explanation.
     """
     
-    # Generate image using DALL-E
-    response = client.images.generate(
-        model="dall-e-3",  # Use the latest DALL-E model
-        prompt=image_prompt,
-        size="1024x1024",
-        quality="standard",
-        n=1
+    # Get the custom prompt from GPT
+    prompt_response = client.chat.completions.create(
+        model=GPT_MODEL,
+        messages=[{"role": "user", "content": prompt_creation_prompt}]
     )
     
-    # Get the URL from the response
-    image_url = response.data[0].url
-    print(f"Successfully generated image with DALL-E: {image_url}")
-    return image_url
+    custom_image_prompt = prompt_response.choices[0].message.content.strip()
+    print(f"Generated custom DALL-E prompt: {custom_image_prompt[:100]}...")
+    
+    # Generate image using the custom prompt
+    try:
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=custom_image_prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
+        
+        # Get the URL from the response
+        image_url = response.data[0].url
+        print(f"Successfully generated unique image with DALL-E")
+        return image_url
+    except Exception as e:
+        print(f"DALL-E image generation failed: {e}")
+        raise RuntimeError(f"DALL-E image generation failed: {e}")
 
 def generate_blog_post(topic):
     """
