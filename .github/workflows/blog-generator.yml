@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install openai requests beautifulsoup4 html2text paramiko
+          pip install openai requests beautifulsoup4 html2text pillow paramiko
           
       - name: Generate and upload blog posts
         env:
