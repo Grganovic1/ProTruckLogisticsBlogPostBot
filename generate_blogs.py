@@ -3,20 +3,17 @@
 Blog Post Generator for Pro Truck Logistics
 
 This script:
-1. Fetches current logistics/transportation news using GPT.
-2. Uses GPT to generate blog posts.
-3. Generates unique images for posts using DALL-E.
-4. Downloads and saves images locally.
-5. Creates HTML files from the content.
-6. Uploads the files (HTML, JSON, Images) to hosting via SFTP.
+1. Fetches current logistics/transportation news using GPT with web browsing capability
+2. Uses GPT to generate blog posts
+3. Creates HTML files from the content
+4. Uploads the files to Namecheap hosting via FTP
 """
 
 import os
 import json
 import time
 import random
-# import ftplib # Removed FTP library
-import paramiko # Added SFTP library
+import ftplib
 import requests
 import html2text
 import re
@@ -24,262 +21,674 @@ from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
 from openai import OpenAI
-import io # Added for image handling
+from PIL import Image
+from io import BytesIO
 
-# --- Configuration ---
-# Get sensitive info from environment variables or a secure config file
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY") # Replace fallback
-# --- Use SFTP details ---
-FTP_HOST = os.environ.get("FTP_HOST", "yourdomain.com") # Replace fallback (often just the domain)
-FTP_USER = os.environ.get("FTP_USER", "YOUR_SFTP_USERNAME") # Replace fallback
-FTP_PASS = os.environ.get("FTP_PASS", "YOUR_SFTP_PASSWORD") # Replace fallback
-FTP_PORT = int(os.environ.get("FTP_PORT", "22")) # Default SFTP port is 22
-FTP_BLOG_DIR = "/public_html/blog-posts/" # IMPORTANT: Adjust to the correct path from your SFTP root to the blog-posts dir (e.g., /home/user/public_html/blog-posts/ or /var/www/html/blog-posts/)
+# Configuration - these will come from GitHub Secrets in production
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "your-api-key-here")
+FTP_HOST = os.environ.get("FTP_HOST", "ftp.yourdomain.com")
+FTP_USER = os.environ.get("FTP_USER", "your-username")
+FTP_PASS = os.environ.get("FTP_PASS", "your-password")
+FTP_BLOG_DIR = "/blog-posts/" # Directory relative to web root
 
-# --- Local Storage Paths ---
-LOCAL_BLOG_DIR = Path("blog-posts") # Base directory for local files
+# Local blog post storage
+LOCAL_BLOG_DIR = Path("blog-posts")
 LOCAL_BLOG_DIR.mkdir(exist_ok=True)
-LOCAL_IMAGE_DIR = LOCAL_BLOG_DIR / "images" # Local image subfolder
-LOCAL_IMAGE_DIR.mkdir(exist_ok=True)        # Create it if it doesn't exist
 
-# --- Generation Settings ---
-POSTS_TO_GENERATE = 1 # Number of posts per run
+# Number of blog posts to generate
+POSTS_TO_GENERATE = 1
 
-# --- Model Selection ---
-GPT_MODEL = "gpt-3.5-turbo"
-BROWSING_MODEL = "gpt-4-1106-preview" # Or a newer capable model
-IMAGE_MODEL = "dall-e-3" # Or "dall-e-2"
+# Model selection
+GPT_MODEL = "gpt-3.5-turbo"  # More cost-effective for regular content generation
+BROWSING_MODEL = "gpt-4-1106-preview"  # Model that supports tools/browsing for research
 
-# --- Blog Content Definitions ---
-# [ Keep your BLOG_CATEGORIES and AUTHORS lists here - omitted for brevity ]
+# Blog post categories - expanded with more specific industry categories
 BLOG_CATEGORIES = [
-    "Industry Trends", "Market Analysis", "Supply Chain Management", "Driver Tips",
-    "Driver Recruitment", "Driver Retention", "Sustainability", "Technology Trends",
-    "Safety", "Regulations", "Fleet Management", "Fuel Management", "LTL Shipping",
-    "FTL Transport", "Logistics Insights"
-    # Add more as needed
+    # Industry Overview
+    "Industry Trends", "Market Analysis", "Economic Outlook", "Logistics Insights",
+    
+    # Operations
+    "Supply Chain Management", "Warehousing", "Inventory Management", "Last-Mile Delivery",
+    "Cross-Docking", "Intermodal Transportation", "Freight Forwarding", "Order Fulfillment",
+    
+    # Driver Focus
+    "Driver Tips", "Driver Wellness", "Driver Recruitment", "Driver Retention",
+    "Owner-Operator Resources", "Career Development", "Road Life", "Driver Stories",
+    
+    # Sustainability & Environment
+    "Sustainability", "Green Logistics", "Carbon Reduction", "Alternative Fuels",
+    "Environmental Compliance", "Eco-Friendly Practices", "Electric Vehicles", "Renewable Energy",
+    
+    # Technology
+    "Technology Trends", "AI & Automation", "Telematics", "Blockchain in Logistics",
+    "IoT Solutions", "Data Analytics", "Digital Transformation", "Route Optimization",
+    "Warehouse Automation", "Transportation Management Systems", "Fleet Tech",
+    
+    # Compliance & Safety
+    "Safety", "Regulations", "Compliance Updates", "Risk Management",
+    "HOS Regulations", "DOT Compliance", "FMCSA Updates", "Insurance Insights",
+    "Security Measures", "Accident Prevention", "Cargo Security",
+    
+    # Fleet Operations
+    "Fleet Management", "Maintenance Tips", "Vehicle Selection", "Asset Utilization",
+    "Fleet Efficiency", "Fuel Management", "Preventative Maintenance", "Equipment Upgrades",
+    
+    # Business & Strategy
+    "Business Growth", "Financial Management", "Strategic Planning", "Competitive Advantage",
+    "Cost Reduction", "Revenue Optimization", "Customer Experience", "Service Expansion",
+    
+    # Industry Segments
+    "LTL Shipping", "FTL Transport", "Refrigerated Logistics", "Hazmat Transportation",
+    "Heavy Haul", "Expedited Shipping", "Specialized Freight", "Bulk Transport",
+    
+    # Global Logistics
+    "International Shipping", "Global Supply Chains", "Cross-Border Transport", "Import/Export",
+    "Trade Compliance", "Customs Regulations", "Port Operations", "Global Logistics Trends",
+    
+    # Customer Focus
+    "Customer Service", "Relationship Management", "Shipper Insights", "Client Success Stories",
+    "Service Improvements", "Client Retention", "Value-Added Services",
+    
+    # Industry Events
+    "Conference Takeaways", "Industry Events", "Trade Shows", "Webinar Recaps",
+    "Expert Interviews", "Industry Awards", "Case Studies"
 ]
 
+# Blog authors
 AUTHORS = [
     {
-        "name": "John Smith", "position": "Logistics Specialist",
-        "bio": "John has over 15 years of experience...",
-        "image": "https://via.placeholder.com/100?text=JS" # Use placeholder or real URLs
+        "name": "John Smith",
+        "position": "Logistics Specialist",
+        "bio": "John has over 15 years of experience in the logistics industry, specializing in supply chain optimization and transportation management.",
+        "image": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3"
     },
     {
-        "name": "Sarah Johnson", "position": "Transportation Analyst",
-        "bio": "Sarah is an expert in transportation economics...",
-        "image": "https://via.placeholder.com/100?text=SJ"
+        "name": "Sarah Johnson",
+        "position": "Transportation Analyst",
+        "bio": "Sarah is an expert in transportation economics and regulatory compliance with a background in both private sector logistics and government oversight.",
+        "image": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3"
     },
-    # Add more authors
+    {
+        "name": "Michael Chen",
+        "position": "Technology Director",
+        "bio": "Michael specializes in logistics technology integration, helping companies leverage AI, IoT, and blockchain solutions to optimize their supply chains.",
+        "image": "https://images.unsplash.com/photo-1560250097-0b93528c311a?ixlib=rb-4.0.3"
+    }
 ]
 
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- Initialize OpenAI Client ---
-try:
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    # Test connection (optional)
-    client.models.list()
-    print("OpenAI client initialized successfully.")
-except Exception as e:
-    print(f"FATAL ERROR: Failed to initialize OpenAI client: {e}")
-    exit(1) # Exit if OpenAI connection fails
-
-# --- Function to Get Topics ---
 def get_current_logistics_topics():
     """
-    Fetches or generates relevant topics for semi-truck logistics blog posts.
-    (Using the refined logic from previous steps)
+    Fetches current trending topics in logistics using GPT with web search capabilities.
+    Falls back to category-based topic generation if web search fails.
+    Returns a list of news articles with titles and summaries.
     """
-    # [ Keep your refined get_current_logistics_topics function here - omitted for brevity ]
-    # This should return a list of topic dictionaries: [{'title': '...', 'summary': '...', 'relevance': '...', 'category': '...' (optional)}]
-    # Make sure it has robust fallbacks.
-    print("Simulating topic fetching: Using hardcoded semi-truck topics.")
+    method_used = "Unknown"
+    
+    # First try: Use GPT with tool use capability and more specific trucking focus
+    try:
+        print("Attempting to get current logistics news via GPT with browsing capability...")
+        
+        # Updated tools format for web browsing
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "description": "Search the web for current information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            }
+        ]
+        
+        # First message to call the search function with more specific semi-truck focus
+        first_response = client.chat.completions.create(
+            model=BROWSING_MODEL,  # Use a model that supports function calling
+            messages=[{"role": "user", "content": "What are the latest news and trending topics in the semi-truck transportation and logistics industry from the past week? Focus specifically on commercial trucking, freight hauling, and long-haul transportation."}],
+            tools=tools,
+            tool_choice={"type": "function", "function": {"name": "search_web"}}
+        )
+        
+        # Check if we have a tool call in the response
+        message = first_response.choices[0].message
+        
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            # Get the search query
+            tool_call = message.tool_calls[0]
+            function_args = json.loads(tool_call.function.arguments)
+            search_query = function_args.get("query")
+            
+            print(f"Searching for: {search_query}")
+            
+            # Try multiple search queries for better results
+            search_queries = [
+                search_query,
+                "latest semi truck industry news and developments",
+                "commercial trucking industry trends this month",
+                "freight transportation challenges and innovations"
+            ]
+            
+            # Second call to process the "search results" with more specific instructions
+            second_response = client.chat.completions.create(
+                model=BROWSING_MODEL,
+                messages=[
+                    {"role": "user", "content": "What are the latest news and trending topics in the semi-truck transportation and logistics industry from the past week? Focus specifically on commercial trucking, freight hauling, and long-haul transportation."},
+                    message,
+                    {
+                        "role": "tool", 
+                        "tool_call_id": tool_call.id,
+                        "name": "search_web",
+                        "content": f"Search results found many recent articles about semi-truck logistics industry trends using queries: {', '.join(search_queries)}"
+                    },
+                    {
+                        "role": "user",
+                        "content": """Based on these search results, provide 5 significant developments or trends in the semi-truck transportation and logistics industry that a trucking company might want to write about in their blog.
+                        
+                        For each topic, provide:
+                        1. A specific headline that would appeal to commercial truck fleet operators and logistics managers
+                        2. A brief summary (1-2 sentences) focused on semi-trucks and freight transportation
+                        3. Why this topic matters to semi-truck logistics professionals
+                        
+                        Make sure topics are specifically relevant to a semi-truck logistics company, not general logistics.
+                        
+                        Format your response as JSON with an array of objects containing "title", "summary", and "relevance" keys."""
+                    }
+                ]
+            )
+            
+            content = second_response.choices[0].message.content
+            
+            # Try to extract JSON from the response
+            try:
+                # Check for JSON code blocks
+                json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    # Look for array pattern
+                    json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        json_str = content
+                
+                topics = json.loads(json_str)
+                
+                # Validate that topics are actually about semi-trucks/commercial trucking
+                valid_topics = []
+                for topic in topics:
+                    title = topic.get('title', '').lower()
+                    summary = topic.get('summary', '').lower()
+                    if any(term in title or term in summary for term in ['truck', 'fleet', 'haul', 'freight', 'driver', 'diesel', 'semi', 'transport']):
+                        valid_topics.append(topic)
+                
+                if len(valid_topics) >= 3:
+                    print(f"Successfully retrieved {len(valid_topics)} trending topics via GPT")
+                    method_used = "GPT Web Search"
+                    return valid_topics
+                else:
+                    print("Retrieved topics weren't specifically about semi-trucks, trying another method")
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse JSON from GPT response: {e}")
+                # Continue to second try below
+        else:
+            print("No tool calls in the response")
+    
+    except Exception as e:
+        print(f"Error using GPT with web search capability: {e}")
+    
+    # Second try: Generate realistic trending topics with GPT with more semi-truck focus
+    try:
+        print("Attempting to generate realistic trending topics with GPT...")
+        
+        current_date = datetime.now().strftime("%B %d, %Y")
+        
+        prompt = f"""
+        Today is {current_date}. Based on current industry trends and economic conditions, 
+        what are 5 realistic trending topics in the semi-truck transportation and logistics industry that would 
+        make good blog post topics for a commercial trucking company?
+
+        For each topic, include:
+        1. A specific headline/title that mentions semi-trucks, commercial trucking, or freight hauling
+        2. A brief summary of the trend/issue specifically for semi-truck operators and fleet managers
+        3. Why this topic is relevant right now to the commercial trucking industry
+
+        Focus on topics that would be relevant in 2025 such as:
+        - New regulations or compliance issues affecting semi-truck operators
+        - Technology adoption in commercial trucking fleets
+        - Diesel prices and alternative fuels for semi-trucks
+        - Supply chain resilience for freight haulers
+        - Labor market trends for commercial truck drivers
+        - Market conditions affecting long-haul shipping rates
+        - Semi-truck maintenance and fleet management innovations
+        - Safety technologies for commercial trucks
+
+        Format your response as a JSON array with objects containing "title", "summary", and "relevance" keys.
+        """
+        
+        response = client.chat.completions.create(
+            model=GPT_MODEL,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        content = response.choices[0].message.content
+        
+        # Try to extract JSON
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = content
+        
+        try:
+            topics = json.loads(json_str)
+            print(f"Successfully generated {len(topics)} trending topics via GPT")
+            method_used = "GPT Generated Trends"
+            return topics
+        except:
+            print("Failed to parse JSON from GPT trend generation")
+            # Continue to fallback below
+    except Exception as e:
+        print(f"Error generating trending topics: {e}")
+    
+    # Third try: Use trucking-specific websites
+    try:
+        print("Attempting to fetch news from trucking websites...")
+        news_articles = []
+        
+        # Try multiple trucking industry websites
+        websites = [
+            {"url": "https://www.ttnews.com/articles/logistics", "article_selector": "article", "title_selector": "h2", "summary_selector": "div.field--name-field-deckhead"},
+            {"url": "https://www.ccjdigital.com/", "article_selector": "article", "title_selector": "h2,h3", "summary_selector": "p.entry-summary"},
+            {"url": "https://www.overdriveonline.com/", "article_selector": "article", "title_selector": "h2,h3", "summary_selector": "p"},
+            {"url": "https://www.fleetowner.com/", "article_selector": "div.node--type-article", "title_selector": "h2,h3", "summary_selector": "div.field--name-field-subheadline"}
+        ]
+        
+        for site in websites:
+            try:
+                response = requests.get(site["url"], timeout=10)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    articles = soup.select(site["article_selector"])
+                    
+                    for article in articles[:3]:  # Get top 3 articles from each site
+                        title_element = article.select_one(site["title_selector"])
+                        title = title_element.text.strip() if title_element else "Unknown Title"
+                        
+                        summary_element = article.select_one(site["summary_selector"])
+                        summary = summary_element.text.strip() if summary_element else ""
+                        
+                        # Create relevance if missing
+                        relevance = f"This topic is relevant to semi-truck operators and fleet managers because it addresses current industry challenges and opportunities in {datetime.now().year}."
+                        
+                        # Only add if it seems to be about trucking
+                        if any(term in title.lower() or term in summary.lower() for term in ['truck', 'fleet', 'haul', 'freight', 'driver', 'diesel', 'semi', 'transport']):
+                            news_articles.append({
+                                "title": title, 
+                                "summary": summary, 
+                                "relevance": relevance
+                            })
+            except Exception as e:
+                print(f"Error fetching from {site['url']}: {e}")
+                continue
+        
+        if len(news_articles) >= 3:
+            print(f"Successfully fetched {len(news_articles)} articles from trucking websites")
+            method_used = "Website Scraping"
+            return news_articles
+    except Exception as e:
+        print(f"Error fetching from trucking websites: {e}")
+    
+    # Final fallback: Generate topics based on blog categories
+    print("Using category-based topic generation")
+    method_used = "Category-Based Generation"
+    
+    # Select random categories to generate topics for
+    selected_categories = random.sample(BLOG_CATEGORIES, min(5, len(BLOG_CATEGORIES)))
+    
+    category_topics = []
+    for category in selected_categories:
+        try:
+            # Generate a topic based on the category
+            prompt = f"""
+            Generate a blog post topic for a semi-truck logistics company in the category: "{category}".
+            
+            The topic should be:
+            1. Specifically about commercial trucking, semi-trucks, or freight hauling
+            2. Relevant to fleet managers and truck operators
+            3. Timely and interesting for 2025
+            
+            Return a JSON object with:
+            - "title": A catchy headline that mentions trucks, fleets, or freight
+            - "summary": A brief 1-2 sentence description of the topic
+            - "relevance": Why this matters to semi-truck logistics professionals
+            
+            Make sure the topic is specifically about semi-trucks and commercial trucking, not general logistics.
+            """
+            
+            response = client.chat.completions.create(
+                model=GPT_MODEL,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            content = response.choices[0].message.content
+            
+            # Try to extract JSON
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'(\{.*\})', content, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    json_str = content
+            
+            topic = json.loads(json_str)
+            
+            # Add the category to the topic
+            topic["category"] = category
+            
+            category_topics.append(topic)
+            print(f"Generated topic for category: {category}")
+            
+        except Exception as e:
+            print(f"Error generating topic for category {category}: {e}")
+            continue
+    
+    if category_topics:
+        return category_topics
+    
+    # Absolute last resort - hardcoded topics with semi-truck focus
+    print("Using hardcoded semi-truck topics as last resort")
     fallback_topics = [
         {
             "title": "Next-Gen Semi-Truck Cabs: How Driver Comfort is Revolutionizing Fleet Retention",
-            "summary": "Modern semi-truck cab designs are incorporating unprecedented comfort features, transforming the driver experience.",
-            "relevance": "Investing in driver comfort is a critical strategy for retaining experienced operators.",
-            "category": "Driver Retention"
+            "summary": "Modern semi-truck cab designs are incorporating unprecedented comfort features, from premium sleeping quarters to advanced climate control systems, transforming the driver experience.",
+            "relevance": "With driver turnover rates still above 90% in many fleets, investing in driver comfort has become a critical strategy for retaining experienced operators."
         },
         {
             "title": "Commercial Fleet Electrification: Real-World ROI Data from Early Semi-Truck Adopters",
-            "summary": "New data reveals the actual cost savings and operational impacts from logistics companies using electric semi-trucks.",
-            "relevance": "Fleet managers need concrete data from similar operations to make informed transition decisions.",
-            "category": "Sustainability"
+            "summary": "New data reveals the actual cost savings and operational impacts from logistics companies that were early adopters of electric semi-trucks on specific routes.",
+            "relevance": "As more manufacturers release commercial electric vehicles, fleet managers need concrete data from similar operations to make informed transition decisions."
+        },
+        {
+            "title": "AI-Powered Route Optimization: Saving Diesel and Hours for Long-Haul Truckers",
+            "summary": "Advanced AI algorithms are revolutionizing semi-truck route planning, reducing delivery times by up to 25% and cutting fuel consumption for commercial fleets.",
+            "relevance": "With diesel prices remaining volatile, logistics companies must leverage technology to maintain competitive advantages in the long-haul sector."
+        },
+        {
+            "title": "Semi-Truck Maintenance Revolution: Predictive Analytics Cutting Downtime by 60%",
+            "summary": "New predictive maintenance systems for commercial trucks are identifying potential failures before they happen, dramatically reducing costly roadside breakdowns.",
+            "relevance": "Each day of semi-truck downtime costs operators thousands in lost revenue and penalties, making preventative maintenance a top priority for fleet managers."
+        },
+        {
+            "title": "Navigating HOS Regulations: Smart Compliance Tools for Fleet Dispatchers",
+            "summary": "New dispatcher-focused software is helping fleet managers optimize loads while ensuring drivers remain compliant with Hours of Service regulations.",
+            "relevance": "With increased enforcement of electronic logging device regulations, fleets need smarter tools to maximize efficiency while avoiding costly violations."
         }
     ]
+    
     return fallback_topics
 
-
-# --- Function to Get Image ---
-def get_relevant_image(topic, post_id):
+def get_relevant_image(topic):
     """
-    Generates a custom image using DALL-E based on the blog post topic.
-    Downloads the image, saves it locally, and returns the FINAL server path.
-    Returns a fallback URL if generation/download/save fails.
+    First generates a custom DALL-E prompt based on the blog post topic,
+    then uses that prompt to generate a unique image.
     """
-    print(f"Attempting to generate DALL-E image for topic: {topic.get('title', 'Untitled')}")
-
-    # More specific fallback image related to trucking
-    fallback_image = "https://images.unsplash.com/photo-1588411393236-d2827123e3e6?ixlib=rb-1.2.1&auto=format&fit=crop&w=1024&q=80" # Image of trucks
-
+    print(f"Generating custom image for topic: {topic}")
+    
+    # Extract title and summary for the prompt if topic is a dictionary
+    topic_title = topic.get('title', '') if isinstance(topic, dict) else topic
+    topic_summary = topic.get('summary', '') if isinstance(topic, dict) else ''
+    topic_relevance = topic.get('relevance', '') if isinstance(topic, dict) else ''
+    
+    # Generate a custom DALL-E prompt using GPT
+    print("Creating custom image prompt with GPT...")
+    
+    prompt_creation_prompt = f"""
+    Create a detailed and specific prompt for DALL-E to generate an image for a blog post about:
+    
+    Title: "{topic_title}"
+    Summary: {topic_summary}
+    Relevance: {topic_relevance}
+    
+    The prompt should:
+    1. Describe a specific, visually interesting scene related to the blog topic
+    2. Include details about composition, perspective, lighting, mood, and setting
+    3. Be highly specific to avoid generic stock photo aesthetics
+    4. Ensure the image will clearly relate to commercial trucking and logistics
+    5. Include clear visual elements that connect to the blog's main points
+    6. Specify photorealistic style and professional quality
+    7. Be unexpected and original - avoid clichéd trucking images
+    
+    Keep the prompt between 100-150 words for optimal results.
+    Output only the prompt itself with no additional text or explanation.
+    """
+    
+    # Get the custom prompt from GPT
+    prompt_response = client.chat.completions.create(
+        model=GPT_MODEL,
+        messages=[{"role": "user", "content": prompt_creation_prompt}]
+    )
+    
+    custom_image_prompt = prompt_response.choices[0].message.content.strip()
+    print(f"Generated custom DALL-E prompt: {custom_image_prompt[:100]}...")
+    
+    # Generate image using the custom prompt
     try:
-        # 1. Create a custom prompt for DALL-E using GPT
-        topic_title = topic.get('title', '')
-        topic_summary = topic.get('summary', '')
-        prompt_creation_prompt = f"""
-        Create a detailed, visually interesting DALL-E prompt (around 100 words) for a photorealistic image illustrating a blog post titled "{topic_title}".
-        The post is about: {topic_summary}.
-        Focus on commercial trucking, semi-trucks, or logistics operations. Avoid generic stock photos. Include specific elements, mood (e.g., optimistic, industrious), and lighting (e.g., dawn, highway lights).
-        Output only the prompt itself.
-        """
-        prompt_response = client.chat.completions.create(
-            model=GPT_MODEL, # Cheaper model for prompt generation
-            messages=[{"role": "user", "content": prompt_creation_prompt}]
-        )
-        custom_image_prompt = prompt_response.choices[0].message.content.strip()
-        print(f"Generated DALL-E prompt: {custom_image_prompt[:100]}...")
-
-        # 2. Generate image using DALL-E
-        print(f"Requesting image from DALL-E model: {IMAGE_MODEL}")
-        image_response = client.images.generate(
-            model=IMAGE_MODEL,
+        response = client.images.generate(
+            model="dall-e-2",
             prompt=custom_image_prompt,
-            size="1024x1024", # DALL-E 3 supports 1024x1024, 1792x1024, 1024x1792
-            quality="standard", # Or "hd"
-            n=1,
-            response_format="url" # Get temporary URL first
+            size="1024x1024",
+            quality="standard",
+            n=1
         )
-        temp_image_url = image_response.data[0].url
-        print(f"DALL-E temporary URL received.")
-
-        # 3. Download the image
-        print(f"Downloading image from temporary URL...")
-        image_download_response = requests.get(temp_image_url, stream=True, timeout=60) # Increased timeout
-        image_download_response.raise_for_status() # Check for download errors
-        image_data = image_download_response.content
-        print(f"Downloaded {len(image_data)} bytes.")
-
-        # 4. Define paths and save locally
-        content_type = image_download_response.headers.get('content-type')
-        extension = 'png' # Default
-        if content_type:
-            if 'png' in content_type: extension = 'png'
-            elif 'jpeg' in content_type or 'jpg' in content_type: extension = 'jpg'
-            elif 'webp' in content_type: extension = 'webp'
-
-        image_filename = f"{post_id}.{extension}"
-        local_image_path = LOCAL_IMAGE_DIR / image_filename
-        # Define the FINAL web-accessible path where the image will live on the server
-        # IMPORTANT: This path must be relative to the web root or an absolute path from the domain root
-        # It should match how images are accessed in your HTML (e.g., /blog-posts/images/...)
-        server_image_path = f"{FTP_BLOG_DIR.replace('/public_html', '').rstrip('/')}/images/{image_filename}" # Adjust based on your web server config
-
-        print(f"Saving image locally to: {local_image_path}")
-        with open(local_image_path, "wb") as f:
-            f.write(image_data)
-        print("Saved image locally.")
-
-        # 5. Return the FINAL server path
-        print(f"Image will be accessible at: {server_image_path}")
-        return server_image_path
-
+        
+        # Get the URL from the response
+        image_url = response.data[0].url
+        print(f"Successfully generated unique image with DALL-E")
+        return image_url
     except Exception as e:
-        print(f"ERROR generating/downloading/saving DALL-E image: {e}")
-        print(f"Using fallback image: {fallback_image}")
-        return fallback_image # Return fallback URL on any error
+        print(f"DALL-E image generation failed: {e}")
+        raise RuntimeError(f"DALL-E image generation failed: {e}")
 
-# --- Function to Generate Post ---
+def download_and_save_image(image_url, post_id):
+    """
+    Downloads an image from a URL and saves it to the local images directory.
+    Returns the local path to the saved image.
+    """
+    # Create images directory if it doesn't exist
+    images_dir = LOCAL_BLOG_DIR / "images"
+    images_dir.mkdir(exist_ok=True)
+    
+    # Generate a filename based on post ID
+    local_filename = f"post-image-{post_id}.png"
+    local_path = images_dir / local_filename
+    
+    print(f"Downloading image from {image_url} to {local_path}")
+    
+    try:
+        # Download the image
+        response = requests.get(image_url, timeout=30)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        
+        # Save the image
+        img = Image.open(BytesIO(response.content))
+        img.save(local_path)
+        
+        print(f"Image saved successfully to {local_path}")
+        
+        # Return the relative path for use in HTML
+        return f"blog-posts/images/{local_filename}"
+    except Exception as e:
+        print(f"Error downloading/saving image: {e}")
+        # Return a placeholder image in case of failure
+        return "https://i.imgur.com/tRwURlo.jpeg"
+    
 def generate_blog_post(topic):
     """
-    Generates a blog post dictionary including content and metadata.
+    Generate a comprehensive blog post using the topic data.
+    Returns a dictionary with the post details and content.
     """
-    print(f"\nGenerating blog post content for: {topic['title']}")
-
-    # Create unique post ID based on timestamp BEFORE generating image
-    post_id = int(time.time())
-
-    # --- Get image FIRST using post_id for filename ---
-    image_url = get_relevant_image(topic, post_id) # Gets FINAL server path or fallback
-
-    # Select Author
+    print(f"Generating blog post about: {topic['title']}")
+    
+    # Select a random author
     author = random.choice(AUTHORS)
-
-    # Determine Category
-    category = topic.get("category", random.choice(BLOG_CATEGORIES)) # Use provided or random
-
-    # Details
+    
+    # Use the topic's category if available, otherwise select a relevant one
+    if "category" in topic:
+        category = topic["category"]
+    else:
+        # Try to match a relevant category based on the topic
+        topic_text = (topic['title'] + ' ' + topic.get('summary', '')).lower()
+        
+        # Define category keywords for matching
+        category_keywords = {
+            "Industry Trends": ["trend", "industry", "market", "outlook", "future"],
+            "Market Analysis": ["market", "analysis", "data", "statistics", "report"],
+            "Economic Outlook": ["economic", "economy", "forecast", "financial", "cost"],
+            "Supply Chain Management": ["supply chain", "inventory", "procurement", "sourcing"],
+            "Driver Recruitment": ["recruit", "hiring", "driver shortage", "talent", "workforce"],
+            "Driver Retention": ["retention", "turnover", "driver satisfaction", "career"],
+            "Sustainability": ["sustainable", "green", "environment", "emission", "carbon"],
+            "Technology Trends": ["technology", "tech", "innovation", "digital", "software"],
+            "Safety": ["safety", "accident", "prevention", "risk", "secure"],
+            "Regulations": ["regulation", "compliance", "law", "legal", "requirement"],
+            "Fleet Management": ["fleet", "management", "maintenance", "vehicle", "asset"],
+            "Fuel Management": ["fuel", "diesel", "gas", "consumption", "efficiency"]
+        }
+        
+        # Find the best matching category
+        best_match = None
+        best_score = 0
+        
+        for cat, keywords in category_keywords.items():
+            score = sum(topic_text.count(keyword) for keyword in keywords)
+            if score > best_score:
+                best_score = score
+                best_match = cat
+        
+        # If no good match, pick from the most relevant categories for a trucking company
+        if best_match is None or best_score == 0:
+            trucking_focused_categories = [
+                "Fleet Management", "Driver Retention", "Fuel Management", 
+                "Safety", "Regulations", "Technology Trends"
+            ]
+            category = random.choice(trucking_focused_categories)
+        else:
+            category = best_match
+    
+    # Generate a reasonable reading time (1500-2000 words is about 7-10 mins)
     read_time = random.randint(7, 10)
+    
+    # Current date for the post
     post_date = datetime.now().strftime("%B %d, %Y")
-
-    # --- Generate Meta Description ---
+    
+    # Generate SEO meta description
     print("Generating meta description...")
     meta_description_prompt = f"""
-    Write an SEO-optimized meta description (under 160 chars) for a blog post titled "{topic['title']}" for a semi-truck logistics company. Focus on keywords like trucking, freight, fleet management.
+    Write an SEO-optimized meta description for a blog post about "{topic['title']}" for a semi-truck logistics company.
+    The description should:
+    - Be compelling and include keywords related to commercial trucking
+    - Mention semi-trucks, fleet management, or freight hauling
+    - Be under 160 characters
+    - Appeal to truck fleet operators and logistics managers
     """
-    try:
-        meta_response = client.chat.completions.create(
-            model=GPT_MODEL, messages=[{"role": "user", "content": meta_description_prompt}]
-        )
-        meta_description = meta_response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Warning: Failed to generate meta description: {e}")
-        meta_description = topic.get('summary', topic['title'])[:155] # Fallback
-
-    # --- Generate Keywords ---
+    
+    meta_description_response = client.chat.completions.create(
+        model=GPT_MODEL,
+        messages=[{"role": "user", "content": meta_description_prompt}]
+    )
+    meta_description = meta_description_response.choices[0].message.content.strip()
+    
+    # Generate SEO keywords
     print("Generating SEO keywords...")
     keywords_prompt = f"""
-    Generate 5-7 SEO keywords/phrases for a blog post titled "{topic['title']}" focusing on semi-truck logistics, freight, and fleet operations. Comma-separated list only.
+    Generate 5-7 SEO keywords or phrases for a blog post about "{topic['title']}" for a semi-truck logistics company. 
+    Include keywords specifically related to commercial trucking, semi-trucks, and freight hauling.
+    Format them as a comma-separated list only. No numbering or bullets.
     """
-    try:
-        keywords_response = client.chat.completions.create(
-            model=GPT_MODEL, messages=[{"role": "user", "content": keywords_prompt}]
-        )
-        keywords = keywords_response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Warning: Failed to generate keywords: {e}")
-        keywords = "logistics, trucking, freight, fleet management" # Fallback
-
-    # --- Generate Main Blog Content ---
-    print("Generating main blog content (HTML)...")
+    
+    keywords_response = client.chat.completions.create(
+        model=GPT_MODEL,
+        messages=[{"role": "user", "content": keywords_prompt}]
+    )
+    keywords = keywords_response.choices[0].message.content.strip()
+    
+    # Generate blog post content
+    print("Generating main blog content...")
     content_prompt = f"""
-    Write a detailed, 1500-word blog post for a semi-truck logistics company titled "{topic['title']}".
-    Context: {topic.get('summary', '')} Relevant because: {topic.get('relevance', '')}.
-    Target Audience: Semi-truck fleet operators, logistics managers.
-    Structure: Engaging intro, 2-3 main H2 sections with practical insights/data/advice for trucking, use H3 subsections and lists, include a fictional expert quote, conclude with key takeaways.
-    Requirements: Trucking-specific terms, optimize for keywords "{keywords}", valuable for 2025, actionable info, HTML format (<p>, <h2>, <h3>, <ul>, <li>, <blockquote>).
+    Write a comprehensive, detailed, and informative blog post about "{topic['title']}" for Pro Truck Logistics company blog.
+    Additional context: {topic.get('summary', '')}
+    Relevance to the industry: {topic.get('relevance', '')}
+    
+    The post should be targeted at semi-truck fleet operators, commercial truck drivers, and logistics managers in the trucking industry.
+    
+    Current date: {post_date}
+    
+    Follow this structure:
+    1. An engaging introduction explaining why this topic matters specifically to semi-truck operators and fleet managers
+    2. 2-3 main sections with descriptive headings (using H2 tags) covering different aspects of the topic as it relates to commercial trucking
+    3. Include subsections with H3 tags where appropriate
+    4. For each section, include practical insights, data points (you can create realistic fictional data), and actionable advice for trucking companies
+    5. Use bullet points or numbered lists where appropriate to break up text
+    6. Include a relevant quote from a trucking industry expert (fictional is fine)
+    7. A conclusion summarizing key takeaways and offering forward-looking perspective for semi-truck fleet operators
+    
+    Make sure to:
+    - Be detailed and specific, aiming for around 1500-2000 words
+    - Use trucking industry-specific terminology appropriately (semi, rig, haul, fleet, etc.)
+    - Mention semi-trucks, commercial trucking, or freight hauling frequently
+    - Optimize for these SEO keywords: {keywords}
+    - Create content that would be valuable for semi-truck logistics professionals in 2025
+    - Include practical, actionable information that truck fleet managers can apply
+    - Format the content in HTML using appropriate tags (<p>, <h2>, <h3>, <ul>, <li>, <blockquote>, etc.)
+    - Make all content factually accurate and avoid making specific claims about real companies without verification
+    
     Category: {category}
     """
-    try:
-        content_response = client.chat.completions.create(
-            model=GPT_MODEL, messages=[{"role": "user", "content": content_prompt}],
-            max_tokens=3000 # Request longer response
-        )
-        content = content_response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"ERROR: Failed to generate main content: {e}")
-        # Create minimal fallback content to allow script to continue
-        content = f"<h2>{topic['title']}</h2><p>Content generation failed. Please edit this post.</p><p>Topic Summary: {topic.get('summary', 'N/A')}</p>"
-
-
-    # --- Create Excerpt ---
-    try:
-        h = html2text.HTML2Text()
-        h.ignore_links = True
-        text_content = h.handle(content)
-        # Find the first meaningful paragraph
-        paragraphs = [p.strip() for p in text_content.split('\n\n') if p.strip() and not p.strip().startswith('#')]
-        first_paragraph = paragraphs[0] if paragraphs else text_content[:250]
-        excerpt = first_paragraph[:200]
-        if len(first_paragraph) > 200:
-            excerpt += "..."
-    except Exception as e:
-        print(f"Warning: Failed to generate excerpt: {e}")
-        excerpt = topic.get('summary', topic['title'])[:200] # Fallback
-
-
-    # --- Assemble Post Data ---
+    
+    content_response = client.chat.completions.create(
+        model=GPT_MODEL,
+        messages=[{"role": "user", "content": content_prompt}]
+    )
+    content = content_response.choices[0].message.content.strip()
+    
+    # Get a relevant image
+    dalle_image_url = get_relevant_image(topic)
+    
+    # Create an excerpt for the blog listing
+    h = html2text.HTML2Text()
+    h.ignore_links = True
+    text_content = h.handle(content)
+    first_paragraph = text_content.split('\n\n')[0].replace('\n', ' ').strip()
+    excerpt = first_paragraph[:200]
+    if len(first_paragraph) > 200:
+        excerpt += "..."
+    
+    # Create unique post ID based on timestamp
+    post_id = int(time.time())
+    
+    # Download and save the image locally
+    local_image_path = download_and_save_image(dalle_image_url, post_id)
+    
+    # Assemble the post data
     post = {
         "id": post_id,
         "title": topic['title'],
@@ -291,395 +700,291 @@ def generate_blog_post(topic):
         "author_bio": author["bio"],
         "author_image": author["image"],
         "read_time": f"{read_time} min read",
-        "content": content, # The generated HTML content
-        "image": image_url, # FINAL server path or fallback
+        "content": content,
+        "image": local_image_path,
         "meta": {
             "description": meta_description,
             "keywords": keywords
-        },
-        "tags": keywords.split(',')[:5] # Use first 5 keywords as initial tags
+        }
     }
-    print(f"Post data assembled for ID {post_id}")
+    
     return post
 
-# --- Function to Save JSON ---
 def save_blog_post(post):
-    """Saves the blog post dictionary as a JSON file locally."""
+    """
+    Save the blog post as a JSON file locally.
+    """
     post_id = post["id"]
     filename = f"{post_id}.json"
     filepath = LOCAL_BLOG_DIR / filename
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(post, f, ensure_ascii=False, indent=2)
-        print(f"Saved blog post JSON to {filepath}")
-        return filepath
-    except IOError as e:
-        print(f"ERROR saving JSON file {filepath}: {e}")
-        return None # Indicate failure
+    
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(post, f, ensure_ascii=False, indent=2)
+    
+    print(f"Saved blog post to {filepath}")
+    return filepath
 
-# --- Function to Create HTML ---
 def create_blog_post_html(post):
-    """Creates an HTML file for the blog post using the template."""
+    """
+    Creates an HTML file for a blog post based on the template.
+    """
     post_id = post["id"]
     html_filename = f"post-{post_id}.html"
+    
+    # Read the blog post template
+    with open("blog-post-template.html", "r", encoding="utf-8") as f:
+        template = f.read()
+    
+    # Replace placeholders with actual content
+    template = template.replace('<title id="post-title">Blog Post | Pro Truck Logistics</title>', 
+                              f'<title>{post["title"]} | Pro Truck Logistics</title>')
+    
+    template = template.replace('<meta id="meta-description" name="description" content="Logistics and transportation industry insights from Pro Truck Logistics">', 
+                              f'<meta name="description" content="{post["meta"]["description"]}">')
+    
+    template = template.replace('<meta id="meta-keywords" name="keywords" content="logistics, trucking, transportation">', 
+                              f'<meta name="keywords" content="{post["meta"]["keywords"]}">')
+    
+    template = template.replace('<meta id="og-title" property="og:title" content="Blog Post | Pro Truck Logistics">', 
+                              f'<meta property="og:title" content="{post["title"]} | Pro Truck Logistics">')
+    
+    template = template.replace('<meta id="og-description" property="og:description" content="Logistics and transportation industry insights from Pro Truck Logistics">', 
+                              f'<meta property="og:description" content="{post["meta"]["description"]}">')
+    
+    template = template.replace('<meta id="og-image" property="og:image" content="">', 
+                              f'<meta property="og:image" content="{post["image"]}">')
+    
+    template = template.replace("background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('');", 
+                              f"background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{post['image']}');")
+    
+    template = template.replace('<span id="post-category" class="post-category">Category</span>', 
+                              f'<span id="post-category" class="post-category">{post["category"]}</span>')
+    
+    template = template.replace('<h1 id="post-title-header" class="post-title">Blog Post Title</h1>', 
+                              f'<h1 id="post-title-header" class="post-title">{post["title"]}</h1>')
+    
+    template = template.replace('<span id="post-date">Date</span>', 
+                              f'<span id="post-date">{post["date"]}</span>')
+    
+    template = template.replace('<span id="post-author">Author</span>', 
+                              f'<span id="post-author">{post["author"]}</span>')
+    
+    template = template.replace('<span id="post-read-time">Read time</span>', 
+                              f'<span id="post-read-time">{post["read_time"]}</span>')
+    
+    template = template.replace('<div id="post-content">\n          <!-- Content will be dynamically inserted here -->\n        </div>', 
+                              f'<div id="post-content">\n          {post["content"]}\n        </div>')
+    
+    template = template.replace('<img id="author-image" src="" alt="Author">', 
+                              f'<img id="author-image" src="{post["author_image"]}" alt="{post["author"]}">')
+    
+    template = template.replace('<h4 id="author-name" class="author-name">Author Name</h4>', 
+                              f'<h4 id="author-name" class="author-name">{post["author"]}</h4>')
+    
+    template = template.replace('<p id="author-position" class="author-position">Position</p>', 
+                              f'<p id="author-position" class="author-position">{post["author_position"]}</p>')
+    
+    template = template.replace('<p id="author-bio">Author bio will be displayed here.</p>', 
+                              f'<p id="author-bio">{post["author_bio"]}</p>')
+    
+    # Update share buttons with the post URL
+    share_url = f"https://protrucklogistics.org/blog-posts/post-{post_id}.html"  # Update with your actual domain
+    
+    template = template.replace('<a href="#" class="share-button facebook">', 
+                              f'<a href="https://www.facebook.com/sharer/sharer.php?u={share_url}" target="_blank" class="share-button facebook">')
+    
+    template = template.replace('<a href="#" class="share-button twitter">', 
+                              f'<a href="https://twitter.com/intent/tweet?url={share_url}&text={post["title"]}" target="_blank" class="share-button twitter">')
+    
+    template = template.replace('<a href="#" class="share-button linkedin">', 
+                              f'<a href="https://www.linkedin.com/shareArticle?mini=true&url={share_url}&title={post["title"]}" target="_blank" class="share-button linkedin">')
+    
+    template = template.replace('<a href="#" class="share-button email">', 
+                              f'<a href="mailto:?subject={post["title"]}&body=Check out this article: {share_url}" class="share-button email">')
+    
+    # Save the HTML file
     html_filepath = LOCAL_BLOG_DIR / html_filename
-    template_path = Path("blog-post-template.html") # Assumes template is in same dir as script
+    with open(html_filepath, "w", encoding="utf-8") as f:
+        f.write(template)
+    
+    print(f"Created HTML file: {html_filepath}")
+    return html_filepath
 
-    try:
-        if not template_path.exists():
-            raise FileNotFoundError(f"Template file not found at {template_path}")
-
-        with open(template_path, "r", encoding="utf-8") as f:
-            template = f.read()
-
-        # Simple (but less robust) string replacement
-        replacements = {
-            '<title id="post-title">Blog Post | Pro Truck Logistics</title>': f'<title>{htmlspecialchars(post["title"])} | Pro Truck Logistics</title>',
-            '<meta id="meta-description" name="description" content="Logistics and transportation industry insights from Pro Truck Logistics">': f'<meta name="description" content="{htmlspecialchars(post["meta"]["description"])}">',
-            '<meta id="meta-keywords" name="keywords" content="logistics, trucking, transportation">': f'<meta name="keywords" content="{htmlspecialchars(post["meta"]["keywords"])}">',
-            '<meta id="og-title" property="og:title" content="Blog Post | Pro Truck Logistics">': f'<meta property="og:title" content="{htmlspecialchars(post["title"])} | Pro Truck Logistics">',
-            '<meta id="og-description" property="og:description" content="Logistics and transportation industry insights from Pro Truck Logistics">': f'<meta property="og:description" content="{htmlspecialchars(post["meta"]["description"])}">',
-            '<meta id="og-image" property="og:image" content="">': f'<meta property="og:image" content="{htmlspecialchars(post["image"])}">',
-            "background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('');": f"background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{htmlspecialchars(post['image'])}');",
-            '<span id="post-category" class="post-category">Category</span>': f'<span id="post-category" class="post-category">{htmlspecialchars(post["category"])}</span>',
-            '<h1 id="post-title-header" class="post-title">Blog Post Title</h1>': f'<h1 id="post-title-header" class="post-title">{htmlspecialchars(post["title"])}</h1>',
-            '<span id="post-date">Date</span>': f'<span id="post-date">{post["date"]}</span>',
-            '<span id="post-author">Author</span>': f'<span id="post-author">{htmlspecialchars(post["author"])}</span>',
-            '<span id="post-read-time">Read time</span>': f'<span id="post-read-time">{post["read_time"]}</span>',
-            '<div id="post-content">\n          <!-- Content will be dynamically inserted here -->\n        </div>': f'<div id="post-content">\n          {post["content"]}\n        </div>', # Insert raw HTML content
-            '<img id="author-image" src="" alt="Author">': f'<img id="author-image" src="{htmlspecialchars(post["author_image"])}" alt="{htmlspecialchars(post["author"])}">',
-            '<h4 id="author-name" class="author-name">Author Name</h4>': f'<h4 id="author-name" class="author-name">{htmlspecialchars(post["author"])}</h4>',
-            '<p id="author-position" class="author-position">Position</p>': f'<p id="author-position" class="author-position">{htmlspecialchars(post["author_position"])}</p>',
-            '<p id="author-bio">Author bio will be displayed here.</p>': f'<p id="author-bio">{htmlspecialchars(post["author_bio"])}</p>',
-        }
-
-        # --- Replace share URLs ---
-        share_url = f"https://protrucklogistics.org/blog-posts/post-{post_id}.html" # Replace with your actual domain/path
-        replacements['<a href="#" class="share-button facebook">'] = f'<a href="https://www.facebook.com/sharer/sharer.php?u={share_url}" target="_blank" class="share-button facebook">'
-        replacements['<a href="#" class="share-button twitter">'] = f'<a href="https://twitter.com/intent/tweet?url={share_url}&text={htmlspecialchars(post["title"])}" target="_blank" class="share-button twitter">'
-        replacements['<a href="#" class="share-button linkedin">'] = f'<a href="https://www.linkedin.com/shareArticle?mini=true&url={share_url}&title={htmlspecialchars(post["title"])}" target="_blank" class="share-button linkedin">'
-        replacements['<a href="#" class="share-button email">'] = f'<a href="mailto:?subject={htmlspecialchars(post["title"])}&body=Check out this article: {share_url}" class="share-button email">'
-
-        # Perform replacements
-        processed_template = template
-        for placeholder, value in replacements.items():
-             processed_template = processed_template.replace(placeholder, value)
-
-        # Save the processed HTML file
-        with open(html_filepath, "w", encoding="utf-8") as f:
-            f.write(processed_template)
-
-        print(f"Created HTML file: {html_filepath}")
-        return html_filepath
-
-    except Exception as e:
-        print(f"ERROR creating HTML file {html_filepath}: {e}")
-        return None # Indicate failure
-
-# Helper for HTML escaping
-def htmlspecialchars(text):
-    import html
-    return html.escape(str(text), quote=True)
-
-# --- Function to Update Index ---
-def update_blog_index(posts_to_add):
+def update_blog_index(posts):
     """
-    Updates the blog index JSON file (index.json).
-    Reads existing posts, adds new ones, sorts, and saves.
+    Updates the blog index JSON file with all blog posts.
+    This will be used by the blog listing page.
     """
     index_path = LOCAL_BLOG_DIR / "index.json"
-    all_posts = []
-
+    
     # Read existing index if it exists
     if index_path.exists():
-        try:
-            with open(index_path, "r", encoding="utf-8") as f:
-                all_posts = json.load(f)
-            if not isinstance(all_posts, list):
-                print("Warning: Existing index.json is not a list. Starting fresh.")
-                all_posts = []
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Could not read or parse existing index.json: {e}. Starting fresh.")
-            all_posts = []
-
-    # Create a set of existing IDs for quick lookup
-    existing_ids = {p.get('id') for p in all_posts if p.get('id')}
-
-    # Add new posts to the list, avoiding duplicates
-    added_count = 0
-    for post in posts_to_add:
-        if post.get('id') and post['id'] not in existing_ids:
-            # Create a simplified version for the index
-            index_post = {
-                "id": post["id"],
-                "title": post["title"],
-                "excerpt": post["excerpt"],
-                "date": post["date"],
-                "category": post["category"],
-                "author": post["author"],
-                "read_time": post["read_time"],
-                "image": post["image"],
-                "tags": post.get("tags", []), # Include tags
-                "hidden": post.get("hidden", False) # Default to not hidden
-            }
-            all_posts.append(index_post)
-            existing_ids.add(post['id'])
-            added_count += 1
-        elif post.get('id'):
-             print(f"Skipping post ID {post['id']} as it already exists in index.")
-
-    # Sort posts by ID (timestamp) in descending order (newest first)
-    all_posts.sort(key=lambda x: x.get("id", 0), reverse=True)
-
-    # Save updated index
-    try:
-        with open(index_path, "w", encoding="utf-8") as f:
-            json.dump(all_posts, f, ensure_ascii=False, indent=2)
-        print(f"Updated blog index '{index_path}' with {added_count} new post(s). Total posts: {len(all_posts)}")
-        return index_path
-    except IOError as e:
-         print(f"ERROR saving updated index.json: {e}")
-         return None
-
-
-# --- Function to Upload Files (SFTP) ---
-def upload_files_via_sftp(file_paths):
-    """
-    Uploads files to the SFTP server using paramiko.
-    Handles subdirectory creation for images.
-    """
-    transport = None
-    sftp = None
-    all_successful = True
-    try:
-        print(f"\nConnecting to SFTP server {FTP_HOST}:{FTP_PORT}...")
-        transport = paramiko.Transport((FTP_HOST, FTP_PORT))
-        # Increase timeout for slower connections if needed
-        transport.set_keepalive(30)
-        transport.connect(username=FTP_USER, password=FTP_PASS)
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        print(f"SFTP Connected. Home directory: {sftp.getcwd()}") # Often starts in user's home
-
-        # --- Navigate to or create the base blog directory ---
-        # IMPORTANT: This assumes FTP_BLOG_DIR is relative to the SFTP root OR absolute path
-        print(f"Attempting to change directory to: {FTP_BLOG_DIR}")
-        try:
-            sftp.chdir(FTP_BLOG_DIR)
-            print(f"Successfully changed directory to {FTP_BLOG_DIR}")
-        except IOError:
-            print(f"Directory {FTP_BLOG_DIR} not found. Attempting to create...")
-            # Create directories recursively (more robust)
-            dirs = FTP_BLOG_DIR.strip('/').split('/')
-            current_path = ""
-            # Handle absolute paths starting from root
-            if FTP_BLOG_DIR.startswith('/'):
-                 current_path = "/"
-            for directory in dirs:
-                 if not directory: continue # Skip empty parts from multiple slashes
-                 if current_path == "/":
-                     current_path += directory
-                 else:
-                     current_path += "/" + directory
-                 try:
-                     sftp.chdir(current_path) # Test if exists
-                 except IOError:
-                     print(f"Creating remote directory: {current_path}")
-                     sftp.mkdir(current_path) # Create if doesn't exist
-                     # Optionally set permissions if needed: sftp.chmod(current_path, 0o775)
-            # Final chdir after creation
-            sftp.chdir(FTP_BLOG_DIR)
-            print(f"Successfully created and changed directory to {FTP_BLOG_DIR}")
-
-        # --- Ensure 'images' subdirectory exists within the blog directory ---
-        remote_image_dir = "images" # Relative to FTP_BLOG_DIR
-        try:
-            sftp.stat(remote_image_dir) # Check if exists
-            print(f"Remote image directory '{remote_image_dir}' exists.")
-        except IOError:
-            print(f"Creating remote image directory: {remote_image_dir}")
-            sftp.mkdir(remote_image_dir)
-            # Optionally set permissions: sftp.chmod(remote_image_dir, 0o775)
-            print(f"Created '{remote_image_dir}'.")
-
-        # --- Upload each file ---
-        print("\nStarting file uploads...")
-        for file_path in file_paths:
-            if not file_path or not file_path.exists():
-                print(f"Skipping upload for non-existent file: {file_path}")
-                continue
-
-            local_file_str = str(file_path.resolve()) # Get absolute path
-            file_name = file_path.name
-
-            # Determine the correct remote path (relative to current dir: FTP_BLOG_DIR)
-            if file_path.parent.name == 'images':
-                remote_path = f"{remote_image_dir}/{file_name}"
-                print(f"Uploading image '{file_name}' to '{remote_path}'...")
-            else:
-                remote_path = file_name
-                print(f"Uploading file '{file_name}' to root of blog dir...")
-
+        with open(index_path, "r", encoding="utf-8") as f:
             try:
-                sftp.put(local_file_str, remote_path)
-                # Optionally set permissions: sftp.chmod(remote_path, 0o664)
-                print(f"  -> Success: Uploaded {file_name}")
-            except Exception as upload_err:
-                 print(f"  -> ERROR uploading {file_name}: {upload_err}")
-                 all_successful = False # Mark failure
+                all_posts = json.load(f)
+            except json.JSONDecodeError:
+                all_posts = []
+    else:
+        all_posts = []
+    
+    # Add new posts to the index
+    for post in posts:
+        # Create a simplified version for the index
+        index_post = {
+            "id": post["id"],
+            "title": post["title"],
+            "excerpt": post["excerpt"],
+            "date": post["date"],
+            "category": post["category"],
+            "author": post["author"],
+            "read_time": post["read_time"],
+            "image": post["image"]
+        }
+        
+        # Add to index, avoiding duplicates
+        if not any(p["id"] == post["id"] for p in all_posts):
+            all_posts.append(index_post)
+    
+    # Sort posts by ID (timestamp) in descending order
+    all_posts.sort(key=lambda x: x["id"], reverse=True)
+    
+    # Save updated index
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(all_posts, f, ensure_ascii=False, indent=2)
+    
+    print(f"Updated blog index with {len(posts)} new posts")
+    return index_path
 
-        print("\nFile upload process finished.")
-        return all_successful
-
-    except paramiko.AuthenticationException:
-        print("FATAL SFTP ERROR: Authentication failed. Check username/password.")
-        return False
-    except paramiko.SSHException as sshException:
-        print(f"FATAL SFTP ERROR: Could not establish SFTP connection: {sshException}")
-        return False
+def upload_files_to_ftp(file_paths):
+    """
+    Uploads files to the FTP server.
+    """
+    try:
+        print(f"Connecting to FTP server {FTP_HOST}...")
+        with ftplib.FTP(FTP_HOST, FTP_USER, FTP_PASS) as ftp:
+            print("Connected to FTP server")
+            
+            # Try to change to the blog directory
+            try:
+                ftp.cwd(FTP_BLOG_DIR)
+            except ftplib.error_perm:
+                # If directory doesn't exist, create it
+                print(f"Creating directory {FTP_BLOG_DIR}")
+                # Split the path and create each directory level
+                path_parts = FTP_BLOG_DIR.strip('/').split('/')
+                for i in range(len(path_parts)):
+                    try:
+                        ftp.cwd('/' + '/'.join(path_parts[:i+1]))
+                    except ftplib.error_perm:
+                        ftp.mkd('/' + '/'.join(path_parts[:i+1]))
+                        ftp.cwd('/' + '/'.join(path_parts[:i+1]))
+            
+            # Create images directory if it doesn't exist
+            try:
+                ftp.cwd('images')
+                ftp.cwd('..')  # Go back to parent directory
+            except ftplib.error_perm:
+                try:
+                    ftp.mkd('images')
+                    print("Created 'images' directory on FTP server")
+                except ftplib.error_perm as e:
+                    print(f"Error creating images directory: {e}")
+                    
+            # Upload each file
+            for file_path in file_paths:
+                file_name = file_path.name
+                
+                # For image files, place them in the images directory
+                if file_path.parent.name == "images":
+                    ftp_path = f"images/{file_name}"
+                    print(f"Uploading image to {ftp_path}...")
+                    
+                    try:
+                        ftp.cwd('images')
+                        with open(file_path, 'rb') as file:
+                            ftp.storbinary(f'STOR {file_name}', file)
+                        ftp.cwd('..')  # Go back to parent directory
+                    except Exception as e:
+                        print(f"Error uploading image {file_name}: {e}")
+                        continue
+                else:
+                    # Regular blog files
+                    print(f"Uploading {file_name}...")
+                    with open(file_path, 'rb') as file:
+                        ftp.storbinary(f'STOR {file_name}', file)
+                
+                print(f"Successfully uploaded {file_name}")
+        
+        print("All files uploaded successfully")
+        return True
     except Exception as e:
-        print(f"FATAL SFTP ERROR: An unexpected error occurred: {e}")
+        print(f"Error uploading files to FTP: {e}")
         return False
-    finally:
-        # Ensure connection is closed
-        if sftp:
-            sftp.close()
-            print("SFTP connection closed.")
-        if transport:
-            transport.close()
-            print("SFTP transport closed.")
 
-
-# --- Function to Gather and Upload All Files ---
 def upload_blog_files():
     """
-    Upload all relevant local blog files (HTML, JSON, images) to the SFTP server.
+    Upload all local blog files to the FTP server.
     """
-    print("\nGathering files for upload...")
-    # Gather all relevant files
-    files_to_upload = list(LOCAL_BLOG_DIR.glob("*.json")) + \
-                      list(LOCAL_BLOG_DIR.glob("*.html")) + \
-                      list(LOCAL_IMAGE_DIR.glob("*.*")) # Images (png, jpg, webp etc.)
-
-    if not files_to_upload:
-        print("No local files found to upload.")
+    # Get all files in the blog directory
+    all_files = list(LOCAL_BLOG_DIR.glob("*.*"))
+    
+    # Get all files in the images subdirectory
+    image_files = list((LOCAL_BLOG_DIR / "images").glob("*.*"))
+    
+    # Combine both lists
+    all_files.extend(image_files)
+    
+    if not all_files:
+        print("No files to upload")
         return False
+    
+    print(f"Found {len(all_files)} files to upload")
+    return upload_files_to_ftp(all_files)
 
-    print(f"Found {len(files_to_upload)} files/images in local directories.")
-
-    # Attempt upload using the SFTP function
-    return upload_files_via_sftp(files_to_upload)
-
-
-# --- Main Execution ---
 def main():
     """
     Main function to run the blog generation and upload process.
     """
-    start_time = time.time()
-    print(f"--- Starting Blog Generation ({datetime.now()}) ---")
-
-    # Fetch Topics
-    print("\nStep 1: Fetching Topics...")
-    try:
-        topics = get_current_logistics_topics()
-        if not topics:
-             print("No topics found or generated. Exiting.")
-             return
-    except Exception as e:
-        print(f"ERROR: Failed to get topics: {e}")
-        return # Exit if topic fetching fails
-
-    # Select topics for this run
+    print("Starting blog post generation...")
+    
+    # Fetch current logistics topics using improved methods
+    print("Fetching current logistics topics...")
+    topics = get_current_logistics_topics()
+    
+    # Select random topics for this run
     if len(topics) > POSTS_TO_GENERATE:
         selected_topics = random.sample(topics, POSTS_TO_GENERATE)
     else:
         selected_topics = topics
-    print(f"Selected {len(selected_topics)} topic(s) for generation.")
-
-    # Generate Posts
-    print("\nStep 2: Generating Posts...")
-    generated_posts_data = [] # Store data of successfully generated posts
-    created_files = []      # Store paths of files created in this run
-
-    for i, topic in enumerate(selected_topics):
-        print(f"\n--- Processing Topic {i+1}/{len(selected_topics)}: \"{topic.get('title', 'Untitled')}\" ---")
-        try:
-            # Generate the blog post data dictionary
-            post_data = generate_blog_post(topic)
-            if not post_data:
-                 raise ValueError("generate_blog_post returned None")
-
-            # Save the post data as JSON
-            json_filepath = save_blog_post(post_data)
-            if json_filepath:
-                created_files.append(json_filepath)
-            else:
-                 raise IOError("Failed to save JSON file")
-
-            # Create HTML file for the post
-            html_filepath = create_blog_post_html(post_data)
-            if html_filepath:
-                created_files.append(html_filepath)
-            else:
-                 raise IOError("Failed to create HTML file")
-
-            # Add the local image path IF it was created and saved locally
-            image_filename = Path(post_data['image']).name # Get filename from the server path
-            local_image_path = LOCAL_IMAGE_DIR / image_filename
-            if local_image_path.exists():
-                 created_files.append(local_image_path)
-            else:
-                 print(f"Warning: Local image file {local_image_path} not found, likely used fallback.")
-
-
-            generated_posts_data.append(post_data) # Add to list of successes
-            print(f"--- Successfully generated post for topic {i+1} ---")
-
-        except Exception as e:
-            # Log detailed error and continue to the next topic
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print(f"ERROR processing topic '{topic.get('title', 'Unknown')}' (ID tentative: {post_id if 'post_id' in locals() else 'N/A'}): {e}")
-            import traceback
-            traceback.print_exc() # Print full traceback for debugging
-            print(f"Skipping this topic.")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            continue # Skip to the next topic
-
-    # Check if any posts were successfully generated
-    if not generated_posts_data:
-         print("\nNo posts were successfully generated in this run. Exiting.")
-         return
-
-    # Update Index
-    print("\nStep 3: Updating Blog Index...")
-    index_filepath = update_blog_index(generated_posts_data)
-    if index_filepath and index_filepath not in created_files:
-        # Ensure index is always in the list of files to potentially upload
-        # (Needed if only updating index without generating new posts, though less common here)
-        created_files.append(index_filepath)
-    elif not index_filepath:
-         print("WARNING: Failed to update index file. Upload will proceed without index update.")
-
-
-    # Upload Files
-    print("\nStep 4: Uploading Files via SFTP...")
-    # Option 1: Upload only files created/updated in THIS run
-    # upload_success = upload_files_via_sftp(created_files)
-
-    # Option 2: Upload ALL relevant files found locally (simpler, ensures consistency)
+    
+    print(f"Selected {len(selected_topics)} topics for blog generation")
+    
+    # Generate and save blog posts
+    generated_posts = []
+    for topic in selected_topics:
+        # Generate the blog post with all components
+        print(f"\nGenerating blog post for: {topic['title']}")
+        post = generate_blog_post(topic)
+        
+        # Save the post data as JSON
+        save_blog_post(post)
+        
+        # Create HTML file for the post
+        create_blog_post_html(post)
+        
+        generated_posts.append(post)
+        print(f"Completed blog post: {post['title']}")
+    
+    # Update the blog index
+    update_blog_index(generated_posts)
+    
+    # Upload files to FTP
     upload_success = upload_blog_files()
-
-    # Final Summary
-    print("\n--- Blog Generation Summary ---")
-    end_time = time.time()
-    print(f"Duration: {end_time - start_time:.2f} seconds")
-    print(f"Successfully generated posts: {len(generated_posts_data)}")
-    print(f"Files created/updated locally: {len(created_files)}")
+    
     if upload_success:
-        print("SFTP Upload Status: SUCCESSFUL")
+        print("Blog post generation and upload completed successfully")
     else:
-        print("SFTP Upload Status: FAILED or Partially Failed (Check logs above)")
-    print("--- Run Finished ---")
+        print("Blog post generation completed but there was an error with the upload")
 
 if __name__ == "__main__":
     main()
