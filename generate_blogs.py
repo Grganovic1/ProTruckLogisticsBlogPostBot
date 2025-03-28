@@ -16,7 +16,8 @@ import random
 import ftplib
 import requests
 import html2text
-import re
+import res
+import paramiko
 from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -30,10 +31,15 @@ FTP_HOST = os.environ.get("FTP_HOST", "ftp.yourdomain.com")
 FTP_USER = os.environ.get("FTP_USER", "your-username")
 FTP_PASS = os.environ.get("FTP_PASS", "your-password")
 FTP_BLOG_DIR = "/blog-posts/" # Directory relative to web root
+FTP_IS_SFTP = os.environ.get("FTP_IS_SFTP", "false").lower() == "true"  # Set to true for SFTP instead of FTP
 
 # Local blog post storage
 LOCAL_BLOG_DIR = Path("blog-posts")
 LOCAL_BLOG_DIR.mkdir(exist_ok=True)
+
+# Create images directory
+IMAGES_DIR = LOCAL_BLOG_DIR / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
 
 # Number of blog posts to generate
 POSTS_TO_GENERATE = 1
@@ -513,13 +519,10 @@ def download_and_save_image(image_url, post_id):
     Downloads an image from a URL and saves it to the local images directory.
     Returns the local path to the saved image.
     """
-    # Create images directory if it doesn't exist
-    images_dir = LOCAL_BLOG_DIR / "images"
-    images_dir.mkdir(exist_ok=True)
     
     # Generate a filename based on post ID
     local_filename = f"post-image-{post_id}.png"
-    local_path = images_dir / local_filename
+    local_path = IMAGES_DIR / local_filename
     
     print(f"Downloading image from {image_url} to {local_path}")
     
@@ -855,11 +858,91 @@ def update_blog_index(posts):
     print(f"Updated blog index with {len(posts)} new posts")
     return index_path
 
-def upload_files_to_ftp(file_paths):
+def upload_files_to_server():
     """
-    Uploads files to the FTP server.
+    Uploads all files in the blog-posts directory to the server.
+    Handles both FTP and SFTP connections.
+    """
+    print(f"Uploading files to server {FTP_HOST}...")
+    
+    if FTP_IS_SFTP:
+        return upload_files_via_sftp()
+    else:
+        return upload_files_via_ftp()
+
+def upload_files_via_sftp():
+    """
+    Uploads files using SFTP protocol.
     """
     try:
+        # Create an SSH client
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        print(f"Connecting to SFTP server {FTP_HOST}...")
+        ssh.connect(hostname=FTP_HOST, username=FTP_USER, password=FTP_PASS)
+        sftp = ssh.open_sftp()
+        
+        # Check if blog directory exists, create if needed
+        try:
+            sftp.stat(FTP_BLOG_DIR)
+        except FileNotFoundError:
+            print(f"Creating directory {FTP_BLOG_DIR}")
+            # Create the directory and any parent directories
+            path_parts = FTP_BLOG_DIR.strip('/').split('/')
+            current_path = ""
+            for part in path_parts:
+                current_path += f"/{part}"
+                try:
+                    sftp.stat(current_path)
+                except FileNotFoundError:
+                    sftp.mkdir(current_path)
+        
+        # Check if images directory exists, create if needed
+        images_remote_path = f"{FTP_BLOG_DIR}/images"
+        try:
+            sftp.stat(images_remote_path)
+        except FileNotFoundError:
+            print(f"Creating directory {images_remote_path}")
+            sftp.mkdir(images_remote_path)
+        
+        # Get all files in the blog directory
+        all_files = list(LOCAL_BLOG_DIR.glob("*.json")) + list(LOCAL_BLOG_DIR.glob("*.html"))
+        
+        # Get all files in the images subdirectory
+        image_files = list(IMAGES_DIR.glob("*.*"))
+        
+        # Upload regular blog files
+        for file_path in all_files:
+            remote_path = f"{FTP_BLOG_DIR}/{file_path.name}"
+            print(f"Uploading {file_path.name} to {remote_path}...")
+            sftp.put(str(file_path), remote_path)
+            print(f"Successfully uploaded {file_path.name}")
+        
+        # Upload image files
+        for file_path in image_files:
+            remote_path = f"{images_remote_path}/{file_path.name}"
+            print(f"Uploading image {file_path.name} to {remote_path}...")
+            sftp.put(str(file_path), remote_path)
+            print(f"Successfully uploaded image {file_path.name}")
+        
+        # Close connections
+        sftp.close()
+        ssh.close()
+        
+        print("All files uploaded successfully via SFTP")
+        return True
+    except Exception as e:
+        print(f"Error uploading files via SFTP: {e}")
+        return False
+
+def upload_files_via_ftp():
+    """
+    Uploads files using traditional FTP protocol.
+    """
+    try:
+        import ftplib
+        
         print(f"Connecting to FTP server {FTP_HOST}...")
         with ftplib.FTP(FTP_HOST, FTP_USER, FTP_PASS) as ftp:
             print("Connected to FTP server")
@@ -889,38 +972,42 @@ def upload_files_to_ftp(file_paths):
                     print("Created 'images' directory on FTP server")
                 except ftplib.error_perm as e:
                     print(f"Error creating images directory: {e}")
-                    
-            # Upload each file
-            for file_path in file_paths:
+            
+            # Get all files in the blog directory
+            all_files = list(LOCAL_BLOG_DIR.glob("*.json")) + list(LOCAL_BLOG_DIR.glob("*.html"))
+            
+            # Get all files in the images subdirectory
+            image_files = list(IMAGES_DIR.glob("*.*"))
+            
+            # Upload regular blog files
+            for file_path in all_files:
                 file_name = file_path.name
+                print(f"Uploading {file_name}...")
                 
-                # For image files, place them in the images directory
-                if file_path.parent.name == "images":
-                    ftp_path = f"images/{file_name}"
-                    print(f"Uploading image to {ftp_path}...")
-                    
-                    try:
-                        ftp.cwd('images')
-                        with open(file_path, 'rb') as file:
-                            ftp.storbinary(f'STOR {file_name}', file)
-                        ftp.cwd('..')  # Go back to parent directory
-                    except Exception as e:
-                        print(f"Error uploading image {file_name}: {e}")
-                        continue
-                else:
-                    # Regular blog files
-                    print(f"Uploading {file_name}...")
-                    with open(file_path, 'rb') as file:
-                        ftp.storbinary(f'STOR {file_name}', file)
+                with open(file_path, 'rb') as file:
+                    ftp.storbinary(f'STOR {file_name}', file)
                 
                 print(f"Successfully uploaded {file_name}")
+            
+            # Upload image files
+            if image_files:
+                ftp.cwd('images')
+                for file_path in image_files:
+                    file_name = file_path.name
+                    print(f"Uploading image {file_name}...")
+                    
+                    with open(file_path, 'rb') as file:
+                        ftp.storbinary(f'STOR {file_name}', file)
+                    
+                    print(f"Successfully uploaded image {file_name}")
+                ftp.cwd('..')  # Go back to parent directory
         
-        print("All files uploaded successfully")
+        print("All files uploaded successfully via FTP")
         return True
     except Exception as e:
-        print(f"Error uploading files to FTP: {e}")
+        print(f"Error uploading files via FTP: {e}")
         return False
-
+    
 def upload_blog_files():
     """
     Upload all local blog files to the FTP server.
@@ -979,7 +1066,7 @@ def main():
     update_blog_index(generated_posts)
     
     # Upload files to FTP
-    upload_success = upload_blog_files()
+    upload_success = upload_files_to_server()
     
     if upload_success:
         print("Blog post generation and upload completed successfully")
