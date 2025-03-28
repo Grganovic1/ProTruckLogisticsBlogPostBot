@@ -79,7 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
             postsToDisplay.forEach(post => {
                 blogPostsContainer.innerHTML += `
                     <div class="blog-card">
-                        <div class="blog-image" style="background-image: url('${post.image}');"></div>
+                        <div class="blog-image" style="background-image: url('${post.image.startsWith('/') ? post.image : '/' + post.image}');"></div>
                         <div class="blog-content">
                             <span class="blog-category">${post.category}</span>
                             <h3 class="blog-title">${post.title}</h3>
