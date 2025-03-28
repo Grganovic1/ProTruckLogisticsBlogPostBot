@@ -16,7 +16,6 @@ import random
 import ftplib
 import requests
 import html2text
-import res
 import paramiko
 from pathlib import Path
 from datetime import datetime
