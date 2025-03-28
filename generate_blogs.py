@@ -498,7 +498,7 @@ def get_relevant_image(topic):
     # Generate image using the custom prompt
     try:
         response = client.images.generate(
-            model="dall-e-2",
+            model="dall-e-3",
             prompt=custom_image_prompt,
             size="1024x1024",
             quality="standard",
@@ -736,6 +736,13 @@ def create_blog_post_html(post):
     # Read the blog post template
     with open("blog-post-template.html", "r", encoding="utf-8") as f:
         template = f.read()
+        
+    # Get the correct image path 
+    image_path = post["image"]
+    
+    # Ensure the image path is absolute (starts with /) for consistent referencing
+    if image_path and not image_path.startswith('/') and not image_path.startswith('http'):
+        image_path = f"/{image_path}"
     
     # Replace placeholders with actual content
     template = template.replace('<title id="post-title">Blog Post | Pro Truck Logistics</title>', 
