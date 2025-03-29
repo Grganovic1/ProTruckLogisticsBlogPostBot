@@ -589,82 +589,32 @@
 
   <!-- Bootstrap JS bundle with Popper from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<!-- Enhanced image loading error handling -->
+<!-- Image loading error handling -->
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-      // Fix image paths if needed
-      function fixImagePath(path) {
-          // If path is already absolute or a full URL, return as is
-          if (path.startsWith('http') || path.startsWith('/')) {
-              return path;
-          }
-          
-          // If we're in a blog post page (in blog-posts directory)
-          if (window.location.pathname.includes('/blog-posts/')) {
-              // Adjust relative path by adding "../" to go up one level
-              if (path.startsWith('./')) {
-                  return path.replace('./', '../');
-              } else {
-                  return '../' + path;
-              }
-          }
-          
-          return path;
-      }
-      
-      // Handle header background image
+      // Simple fallback for header image if it fails to load
       const headerEl = document.getElementById('post-header');
-      const bgStyle = window.getComputedStyle(headerEl).backgroundImage;
-      const imageUrlMatch = bgStyle.match(/url\(['"](.+)['"]\)/);
+      const bgImg = new Image();
       
-      if (imageUrlMatch && imageUrlMatch[1]) {
-          const originalUrl = imageUrlMatch[1];
-          const fixedUrl = fixImagePath(originalUrl);
-          
-          if (originalUrl !== fixedUrl) {
-              headerEl.style.backgroundImage = headerEl.style.backgroundImage.replace(originalUrl, fixedUrl);
-          }
-          
-          // Still add fallback in case of loading error
-          const img = new Image();
-          img.onerror = function() {
-              console.error('Failed to load header image:', fixedUrl);
-              headerEl.style.backgroundImage = "linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://i.imgur.com/tRwURlo.jpeg')";
-          };
-          img.src = fixedUrl;
+      bgImg.onerror = function() {
+          console.error('Failed to load header image - using fallback');
+          headerEl.style.backgroundImage = "linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://i.imgur.com/tRwURlo.jpeg')";
+      };
+      
+      // Extract current image URL
+      const match = headerEl.style.backgroundImage.match(/url\(['"](.+)['"]\)/);
+      if (match && match[1]) {
+          bgImg.src = match[1];
       }
       
-      // Handle author image
+      // Simple fallback for author image
       const authorImgEl = document.getElementById('author-image');
       if (authorImgEl) {
-          const originalSrc = authorImgEl.src;
-          const fixedSrc = fixImagePath(originalSrc);
-          
-          if (originalSrc !== fixedSrc) {
-              authorImgEl.src = fixedSrc;
-          }
-          
           authorImgEl.onerror = function() {
-              console.error('Failed to load author image:', this.src);
+              console.error('Failed to load author image - using fallback');
               this.src = 'https://i.imgur.com/vN6nKXW.png';
           };
       }
-      
-      // Also fix any embedded images in the blog content
-      const contentImages = document.querySelectorAll('#post-content img');
-      contentImages.forEach(function(img) {
-          const originalSrc = img.src;
-          const fixedSrc = fixImagePath(originalSrc);
-          
-          if (originalSrc !== fixedSrc) {
-              img.src = fixedSrc;
-          }
-          
-          img.onerror = function() {
-              console.error('Failed to load content image:', this.src);
-              this.src = 'https://via.placeholder.com/800x400?text=Image+Unavailable';
-          };
-      });
   });
 </script>
 </body>
