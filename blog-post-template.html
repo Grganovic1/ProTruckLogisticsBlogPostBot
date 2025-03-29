@@ -589,33 +589,5 @@
 
   <!-- Bootstrap JS bundle with Popper from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<!-- Image loading error handling -->
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-      // Simple fallback for header image if it fails to load
-      const headerEl = document.getElementById('post-header');
-      const bgImg = new Image();
-      
-      bgImg.onerror = function() {
-          console.error('Failed to load header image - using fallback');
-          headerEl.style.backgroundImage = "linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://i.imgur.com/tRwURlo.jpeg')";
-      };
-      
-      // Extract current image URL
-      const match = headerEl.style.backgroundImage.match(/url\(['"](.+)['"]\)/);
-      if (match && match[1]) {
-          bgImg.src = match[1];
-      }
-      
-      // Simple fallback for author image
-      const authorImgEl = document.getElementById('author-image');
-      if (authorImgEl) {
-          authorImgEl.onerror = function() {
-              console.error('Failed to load author image - using fallback');
-              this.src = 'https://i.imgur.com/vN6nKXW.png';
-          };
-      }
-  });
-</script>
 </body>
 </html>
