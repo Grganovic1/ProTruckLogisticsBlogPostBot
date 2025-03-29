@@ -904,21 +904,7 @@ def create_blog_post_html(post):
     
     template = template.replace('<a href="#" class="share-button email">', 
                               f'<a href="mailto:?subject={post["title"]}&body=Check out this article: {share_url}" class="share-button email">')
-    
-        # Process the content to add heading IDs and generate table of contents
-    html_content, toc_html = add_heading_ids_and_toc(post["content"])
 
-    # Update the post content with IDs
-    post["content"] = html_content
-
-    # Update the template with TOC
-    if toc_html:  # Only add TOC if headings were found
-        template = template.replace('<ul id="toc-list" class="list-unstyled">\n    <!-- TOC items will be dynamically inserted here -->\n  </ul>', 
-                                f'<ul id="toc-list" class="list-unstyled">\n    {toc_html}\n  </ul>')
-    else:
-        # If no headings were found, hide the TOC container
-        template = template.replace('<div class="toc-container mb-4 p-3 border rounded bg-light">', 
-                                '<div class="toc-container mb-4 p-3 border rounded bg-light" style="display: none;">')
     # Save the HTML file
     html_filepath = LOCAL_BLOG_DIR / html_filename
     with open(html_filepath, "w", encoding="utf-8") as f:
