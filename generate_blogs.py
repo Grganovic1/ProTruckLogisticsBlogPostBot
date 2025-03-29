@@ -740,7 +740,45 @@ def create_blog_post_html(post):
     # Read the blog post template
     with open("blog-post-template.html", "r", encoding="utf-8") as f:
         template = f.read()
-        
+    
+    # Create Schema.org Article JSON data
+    schema_data = {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": post["title"],
+        "description": post["meta"]["description"],
+        "image": f"https://www.protrucklogistics.com/{post['image']}",
+        "author": {
+            "@type": "Person",
+            "name": post["author"]
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "Pro Truck Logistics",
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://www.protrucklogistics.com/ProTruckLogisticsFiles/logo.jpg"
+            }
+        },
+        "datePublished": post["date"],
+        "dateModified": post["date"],
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": f"https://www.protrucklogistics.com/blog-posts/post-{post_id}.html"
+        }
+    }
+    
+    # Convert to JSON string with proper indentation
+    schema_json = json.dumps(schema_data, indent=2)
+    
+    # Replace the placeholder schema with actual data
+    template = re.sub(
+        r'<script type="application/ld\+json" id="article-schema">\s*\{.*?\}\s*</script>',
+        f'<script type="application/ld+json" id="article-schema">\n{schema_json}\n</script>',
+        template, 
+        flags=re.DOTALL
+    )
+    
     # Get the correct image path 
     image_path = post["image"]
     
