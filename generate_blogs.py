@@ -764,8 +764,12 @@ def create_blog_post_html(post):
     template = template.replace('<meta id="og-image" property="og:image" content="">', 
                               f'<meta property="og:image" content="{post["image"]}">')
     
-    template = template.replace("background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('');", 
-                              f"background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{image_path}');")
+    template = template.replace('background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(\'\');', 
+                              f'background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(\'{image_path}\');')
+    
+    if '<header id="post-header" class="page-header">' in template:
+        template = template.replace('<header id="post-header" class="page-header">', 
+                                  f'<header id="post-header" class="page-header" style="background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(\'{image_path}\');">')
     
     template = template.replace('<span id="post-category" class="post-category">Category</span>', 
                               f'<span id="post-category" class="post-category">{post["category"]}</span>')
