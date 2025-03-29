@@ -16,6 +16,7 @@ import random
 import ftplib
 import requests
 import html2text
+import re
 import paramiko
 from pathlib import Path
 from datetime import datetime
@@ -864,8 +865,19 @@ def update_blog_index(posts):
         if not any(p["id"] == post["id"] for p in all_posts):
             all_posts.append(index_post)
     
-    # Sort posts by ID (timestamp) in descending order
-    all_posts.sort(key=lambda x: x["id"], reverse=True)
+    # Handle sorting with mixed string/integer IDs
+    def get_sort_key(post):
+        post_id = post["id"]
+        # If ID is like "bp123", extract the number
+        if isinstance(post_id, str) and post_id.startswith("bp"):
+            try:
+                return int(post_id[2:])  # Extract number after "bp"
+            except ValueError:
+                return post_id  # Keep as string if conversion fails
+        return post_id  # Return as-is if not a "bp" format
+
+    # Sort posts with the custom sorting function
+    all_posts.sort(key=get_sort_key, reverse=True)
     
     # Save updated index
     with open(index_path, "w", encoding="utf-8") as f:
