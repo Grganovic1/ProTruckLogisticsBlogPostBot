@@ -741,6 +741,20 @@ def create_blog_post_html(post):
     with open("blog-post-template.html", "r", encoding="utf-8") as f:
         template = f.read()
     
+    # Function to format date to ISO 8601 with timezone
+    def format_iso_date(date_string):
+        """Convert a date string like 'March 29, 2025' to ISO 8601 format with timezone."""
+        try:
+            import datetime
+            # Parse the date string
+            date_obj = datetime.datetime.strptime(date_string, "%B %d, %Y")
+            # Format to ISO 8601 with timezone
+            return date_obj.strftime("%Y-%m-%dT00:00:00Z")
+        except Exception as e:
+            print(f"Date parsing error: {e}")
+            # If parsing fails, return original string
+            return date_string
+    
     # Create Schema.org Article JSON data
     schema_data = {
         "@context": "https://schema.org",
@@ -750,7 +764,8 @@ def create_blog_post_html(post):
         "image": f"https://www.protrucklogistics.com/{post['image']}",
         "author": {
             "@type": "Person",
-            "name": post["author"]
+            "name": post["author"],
+            "url": f"https://www.protrucklogistics.com/about.html#{post['author'].lower().replace(' ', '-')}"
         },
         "publisher": {
             "@type": "Organization",
@@ -760,8 +775,8 @@ def create_blog_post_html(post):
                 "url": "https://www.protrucklogistics.com/ProTruckLogisticsFiles/logo.jpg"
             }
         },
-        "datePublished": post["date"],
-        "dateModified": post["date"],
+        "datePublished": format_iso_date(post["date"]),
+        "dateModified": format_iso_date(post["date"]),
         "mainEntityOfPage": {
             "@type": "WebPage",
             "@id": f"https://www.protrucklogistics.com/blog-posts/post-{post_id}.html"
