@@ -12,9 +12,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const recentPostsContainer = document.getElementById('recent-posts-container');
     const tagsContainer = document.getElementById('tags-container');
     
-    // Get the current page from URL parameter
+    // Get the current page and category from URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     let currentPage = parseInt(urlParams.get('page')) || 1;
+    let currentCategory = urlParams.get('category') || null;
     
     // Fetch blog posts from the index.json file
     fetch('blog-posts/index.json')
@@ -25,6 +26,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(posts => {
+            // Sort posts by date (newest first)
+            posts = sortPostsByDate(posts);
+            
             // Display blog posts
             displayBlogPosts(posts);
             
@@ -46,13 +50,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     
     /**
-     * Display blog posts with pagination
+     * Sort posts by date (newest first)
+     */
+    function sortPostsByDate(posts) {
+        return posts.sort((a, b) => {
+            // Parse dates (assuming MM/DD/YYYY or similar format)
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            
+            // Sort newest first
+            return dateB - dateA;
+        });
+    }
+    
+    /**
+     * Display blog posts with pagination and category filtering
      */
     function displayBlogPosts(posts) {
         if (!blogPostsContainer) return;
         
+        // Filter posts by category if a category is selected
+        let filteredPosts = posts;
+        if (currentCategory) {
+            filteredPosts = posts.filter(post => post.category === currentCategory);
+        }
+        
         // Calculate pagination
-        const totalPosts = posts.length;
+        const totalPosts = filteredPosts.length;
         const totalPages = Math.ceil(totalPosts / postsPerPage);
         
         // Ensure current page is valid
@@ -62,24 +86,36 @@ document.addEventListener('DOMContentLoaded', function() {
         // Calculate start and end indices for current page
         const startIndex = (currentPage - 1) * postsPerPage;
         const endIndex = startIndex + postsPerPage;
-        const postsToDisplay = posts.slice(startIndex, endIndex);
+        const postsToDisplay = filteredPosts.slice(startIndex, endIndex);
         
         // Clear the container
         blogPostsContainer.innerHTML = '';
         
+        // Display category filter message if filtering
+        if (currentCategory) {
+            blogPostsContainer.innerHTML = `
+                <div class="alert alert-info mb-4">
+                    <h5 class="mb-0">
+                        <i class="fas fa-filter me-2"></i> Showing posts in category: "${currentCategory}" 
+                        <a href="?page=1" class="btn btn-sm btn-outline-primary ms-3">Show All Categories</a>
+                    </h5>
+                </div>
+            `;
+        }
+        
         // Display posts for the current page
         if (postsToDisplay.length === 0) {
-            blogPostsContainer.innerHTML = `
+            blogPostsContainer.innerHTML += `
                 <div class="alert alert-info">
-                    <h4>No Blog Posts Yet</h4>
-                    <p>Check back soon for new content!</p>
+                    <h4>No Blog Posts Found</h4>
+                    <p>No posts available ${currentCategory ? `in the "${currentCategory}" category` : ''}. Check back soon for new content!</p>
                 </div>
             `;
         } else {
             postsToDisplay.forEach(post => {
                 blogPostsContainer.innerHTML += `
                     <div class="blog-card">
-                        <div class="blog-image" style="background-image: url('${post.image.startsWith('/') ? post.image : '/' + post.image}');"></div>
+                        <div class="blog-image" style="background-image: url('${post.image}');"></div>
                         <div class="blog-content">
                             <span class="blog-category">${post.category}</span>
                             <h3 class="blog-title">${post.title}</h3>
@@ -97,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     /**
-     * Update pagination links
+     * Update pagination links, preserving category filter
      */
     function updatePagination(totalPages, currentPage) {
         if (!paginationContainer) return;
@@ -108,11 +144,17 @@ document.addEventListener('DOMContentLoaded', function() {
         // No pagination needed if only one page
         if (totalPages <= 1) return;
         
+        // Build the base URL with category if present
+        let baseUrl = '?';
+        if (currentCategory) {
+            baseUrl += `category=${encodeURIComponent(currentCategory)}&`;
+        }
+        
         // Previous page
         if (currentPage > 1) {
             paginationContainer.innerHTML += `
                 <li class="page-item">
-                    <a class="page-link" href="?page=${currentPage - 1}" aria-label="Previous">
+                    <a class="page-link" href="${baseUrl}page=${currentPage - 1}" aria-label="Previous">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -123,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (let i = 1; i <= totalPages; i++) {
             paginationContainer.innerHTML += `
                 <li class="page-item ${i === currentPage ? 'active' : ''}">
-                    <a class="page-link" href="?page=${i}">${i}</a>
+                    <a class="page-link" href="${baseUrl}page=${i}">${i}</a>
                 </li>
             `;
         }
@@ -132,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (currentPage < totalPages) {
             paginationContainer.innerHTML += `
                 <li class="page-item">
-                    <a class="page-link" href="?page=${currentPage + 1}" aria-label="Next">
+                    <a class="page-link" href="${baseUrl}page=${currentPage + 1}" aria-label="Next">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>
@@ -158,10 +200,17 @@ document.addEventListener('DOMContentLoaded', function() {
             // Clear the container
             categoriesContainer.innerHTML = '';
             
+            // Add "All Categories" option at the top
+            categoriesContainer.innerHTML += `
+                <li><a href="?page=1" class="fw-bold">All Categories (${posts.length})</a></li>
+            `;
+            
             // Display categories
             Object.keys(categories).sort().forEach(category => {
+                // Highlight the current category
+                const isActive = category === currentCategory;
                 categoriesContainer.innerHTML += `
-                    <li><a href="?category=${encodeURIComponent(category)}">${category} (${categories[category]})</a></li>
+                    <li><a href="?category=${encodeURIComponent(category)}&page=1" ${isActive ? 'class="fw-bold text-secondary-custom"' : ''}>${category} (${categories[category]})</a></li>
                 `;
             });
         }
@@ -169,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update recent posts
         if (recentPostsContainer) {
             // Sort posts by date (most recent first)
-            const recentPosts = [...posts].sort((a, b) => b.id - a.id).slice(0, 4);
+            const recentPosts = [...posts].slice(0, 4);
             
             // Clear the container
             recentPostsContainer.innerHTML = '';
@@ -201,10 +250,17 @@ document.addEventListener('DOMContentLoaded', function() {
             // Clear the container
             tagsContainer.innerHTML = '';
             
+            // Add "All" tag
+            tagsContainer.innerHTML += `
+                <a href="?page=1" class="btn ${!currentCategory ? 'btn-primary' : 'btn-outline-primary'} btn-sm m-1">All</a>
+            `;
+            
             // Display tags
             uniqueTags.forEach(tag => {
+                // Highlight the current tag
+                const isActive = tag === currentCategory;
                 tagsContainer.innerHTML += `
-                    <a href="?category=${encodeURIComponent(tag)}" class="btn btn-outline-primary btn-sm m-1">${tag}</a>
+                    <a href="?category=${encodeURIComponent(tag)}&page=1" class="btn ${isActive ? 'btn-primary' : 'btn-outline-primary'} btn-sm m-1">${tag}</a>
                 `;
             });
         }
