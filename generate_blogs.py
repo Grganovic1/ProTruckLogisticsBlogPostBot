@@ -716,6 +716,38 @@ def generate_blog_post(topic):
     
     return post
 
+def add_heading_ids_and_toc(html_content):
+    """
+    Adds IDs to H2 and H3 headings and generates a table of contents.
+    Returns the modified HTML and TOC HTML.
+    """
+    # Import BeautifulSoup if not already imported
+    from bs4 import BeautifulSoup
+    
+    soup = BeautifulSoup(html_content, 'html.parser')
+    toc_items = []
+    
+    # Find all H2 and H3 headings
+    for i, heading in enumerate(soup.find_all(['h2', 'h3'])):
+        # Create an ID based on the heading text
+        heading_text = heading.get_text()
+        heading_id = f"{heading.name}-{i}-{re.sub(r'[^a-z0-9]', '-', heading_text.lower())}"
+        
+        # Add the ID to the heading
+        heading['id'] = heading_id
+        
+        # Add to TOC with appropriate indentation
+        if heading.name == 'h2':
+            toc_items.append(f'<li><a href="#{heading_id}" class="toc-link">{heading_text}</a></li>')
+        else:  # h3
+            toc_items.append(f'<li class="ms-4"><a href="#{heading_id}" class="toc-link">{heading_text}</a></li>')
+    
+    # Generate TOC HTML
+    toc_html = '\n'.join(toc_items)
+    
+    # Return the modified HTML content and TOC HTML
+    return str(soup), toc_html
+
 def save_blog_post(post):
     """
     Save the blog post as a JSON file locally.
@@ -873,6 +905,20 @@ def create_blog_post_html(post):
     template = template.replace('<a href="#" class="share-button email">', 
                               f'<a href="mailto:?subject={post["title"]}&body=Check out this article: {share_url}" class="share-button email">')
     
+        # Process the content to add heading IDs and generate table of contents
+    html_content, toc_html = add_heading_ids_and_toc(post["content"])
+
+    # Update the post content with IDs
+    post["content"] = html_content
+
+    # Update the template with TOC
+    if toc_html:  # Only add TOC if headings were found
+        template = template.replace('<ul id="toc-list" class="list-unstyled">\n    <!-- TOC items will be dynamically inserted here -->\n  </ul>', 
+                                f'<ul id="toc-list" class="list-unstyled">\n    {toc_html}\n  </ul>')
+    else:
+        # If no headings were found, hide the TOC container
+        template = template.replace('<div class="toc-container mb-4 p-3 border rounded bg-light">', 
+                                '<div class="toc-container mb-4 p-3 border rounded bg-light" style="display: none;">')
     # Save the HTML file
     html_filepath = LOCAL_BLOG_DIR / html_filename
     with open(html_filepath, "w", encoding="utf-8") as f:
