@@ -38,5 +38,15 @@
     "author": "John Smith",
     "read_time": "7 min read",
     "image": "blog-posts/images/post-image-1743195750.png"
+  },
+  {
+    "id": "bp1",
+    "title": "Cybersecurity in Freight Transport: Protecting Your Fleet",
+    "excerpt": "# Cybersecurity in Freight Transport: Protecting Your Fleet",
+    "date": "March 29, 2025",
+    "category": "Fleet Management",
+    "author": "Michael Chen",
+    "read_time": "10 min read",
+    "image": "blog-posts/images/bp1-image.png"
   }
 ]
