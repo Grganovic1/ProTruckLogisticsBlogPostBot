@@ -520,7 +520,7 @@ def download_and_save_image(image_url, post_id):
     """
     
     # Generate a filename based on post ID
-    local_filename = f"post-image-{post_id}.png"
+    local_filename = f"{post_id}-image.png"
     local_path = IMAGES_DIR / local_filename
     
     print(f"Downloading image from {image_url} to {local_path}")
@@ -685,8 +685,10 @@ def generate_blog_post(topic):
     if len(first_paragraph) > 200:
         excerpt += "..."
     
-    # Create unique post ID based on timestamp
-    post_id = int(time.time())
+    # Create a simpler post ID based on count of existing posts
+    existing_posts = list(LOCAL_BLOG_DIR.glob("bp*.json"))
+    next_number = len(existing_posts) + 1
+    post_id = f"bp{next_number}"
     
     # Download and save the image locally
     local_image_path = download_and_save_image(dalle_image_url, post_id)
@@ -741,9 +743,10 @@ def create_blog_post_html(post):
     # Get the correct image path 
     image_path = post["image"]
     
-    # Ensure the image path is absolute (starts with /) for consistent referencing
-    if image_path and not image_path.startswith('/') and not image_path.startswith('http'):
-        image_path = f"/{image_path}"
+    # If the path starts with "blog-posts/", adjust it to go up one directory
+    if image_path.startswith("blog-posts/"):
+        # From blog post directory, we need to go up one level
+        image_path = ".." + image_path[len("blog-posts"):]
     
     # Replace placeholders with actual content
     template = template.replace('<title id="post-title">Blog Post | Pro Truck Logistics</title>', 
