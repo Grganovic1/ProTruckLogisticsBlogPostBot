@@ -536,8 +536,9 @@ def download_and_save_image(image_url, post_id):
         
         print(f"Image saved successfully to {local_path}")
         
-        # Return the relative path for use in HTML
-        return f"blog-posts/images/{local_filename}"
+        # Store as a file system relative path - this is important!
+        return "images/" + local_filename
+    
     except Exception as e:
         print(f"Error downloading/saving image: {e}")
         # Return a placeholder image in case of failure
@@ -764,7 +765,7 @@ def create_blog_post_html(post):
                               f'<meta property="og:image" content="{post["image"]}">')
     
     template = template.replace("background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('');", 
-                              f"background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{post['image']}');")
+                              f"background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{image_path}');")
     
     template = template.replace('<span id="post-category" class="post-category">Category</span>', 
                               f'<span id="post-category" class="post-category">{post["category"]}</span>')
@@ -847,7 +848,9 @@ def update_blog_index(posts):
             "category": post["category"],
             "author": post["author"],
             "read_time": post["read_time"],
-            "image": post["image"]
+            "image": post["image"],
+            # For blog.html, we need to prefix the path with blog-posts/
+            "image": "blog-posts/" + post["image"] if post["image"].startswith("images/") else post["image"]
         }
         
         # Add to index, avoiding duplicates
