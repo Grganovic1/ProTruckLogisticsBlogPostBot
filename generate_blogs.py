@@ -815,17 +815,56 @@ def create_blog_post_html(post):
         }
     }
     
+    # Enhanced Schema.org generation
+    def format_iso_date(date_string):
+        """Convert a date string like 'March 29, 2025' to ISO 8601 format."""
+        try:
+            date_obj = datetime.strptime(date_string, "%B %d, %Y")
+            return date_obj.strftime("%Y-%m-%dT00:00:00Z")
+        except Exception as e:
+            print(f"Date parsing error: {e}")
+            return date_string
+
+    # Create Schema.org Article JSON data
+    schema_data = {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": post["title"],
+        "description": post["meta"]["description"],
+        "image": f"https://www.protrucklogistics.com/blog-posts/{post['image']}",
+        "author": {
+            "@type": "Person",
+            "name": post["author"],
+            "jobTitle": post["author_position"]
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "Pro Truck Logistics",
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://www.protrucklogistics.com/ProTruckLogisticsFiles/logo.jpg"
+            }
+        },
+        "datePublished": format_iso_date(post["date"]),
+        "dateModified": format_iso_date(post["date"]),
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": f"https://www.protrucklogistics.com/blog-posts/post-{post_id}.html"
+        },
+        "keywords": post["meta"]["keywords"],
+        "articleSection": post["category"]
+    }
+
     # Convert to JSON string with proper indentation
     schema_json = json.dumps(schema_data, indent=2)
-    
-    # Replace the placeholder schema with actual data
+
+    # Replace the placeholder schema with enhanced data
     template = re.sub(
         r'<script type="application/ld\+json" id="article-schema">\s*\{.*?\}\s*</script>',
-        f'<script type="application/ld+json" id="article-schema">\n{schema_json}\n</script>',
+        f'<script type="application/ld\+json" id="article-schema">\n{schema_json}\n</script>',
         template, 
         flags=re.DOTALL
     )
-    
     # Get the correct image path 
     image_path = post["image"]
     
