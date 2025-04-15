@@ -40,6 +40,16 @@
     "image": "blog-posts/images/post-image-1743195750.png"
   },
   {
+    "id": "bp20",
+    "title": "Autonomous Trucking Revolution: How Self-Driving Semis Are Shaping the Road Ahead",
+    "excerpt": "# Autonomous Trucking Revolution: How Self-Driving Semis Are Shaping the Road Ahead",
+    "date": "April 15, 2025",
+    "category": "Technology Trends",
+    "author": "John Smith",
+    "read_time": "10 min read",
+    "image": "blog-posts/images/bp20-image.png"
+  },
+  {
     "id": "bp19",
     "title": "Real-Time Data Analytics: Transforming Fleet Management for Semi-Trucks",
     "excerpt": "# Real-Time Data Analytics: Transforming Fleet Management for Semi-Trucks",
