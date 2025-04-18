@@ -450,6 +450,39 @@
       }
     }
     </script>
+    <script>
+      // Load favicon and shared meta tags
+      fetch('../blog-includes.html')
+        .then(response => response.text())
+        .then(data => {
+          const headElement = document.head;
+          const tempElement = document.createElement('div');
+          tempElement.innerHTML = data;
+          
+          // Add common elements
+          while (tempElement.firstChild) {
+            headElement.insertBefore(tempElement.firstChild, document.querySelector('style'));
+          }
+          
+          // Add page-specific meta tags based on the current page content
+          // These will be dynamically generated for each blog post
+          const pageTitle = document.title;
+          const pageDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
+                          "Logistics and transportation industry insights from Pro Truck Logistics";
+          
+          const metaTags = `
+            <meta property="og:title" content="${pageTitle}">
+            <meta property="og:description" content="${pageDesc}">
+            <meta property="og:type" content="article">
+          `;
+          
+          tempElement.innerHTML = metaTags;
+          while (tempElement.firstChild) {
+            headElement.insertBefore(tempElement.firstChild, document.querySelector('style'));
+          }
+        })
+        .catch(error => console.error('Error loading includes:', error));
+    </script>
 </head>
 <body>
   <!-- Navigation -->
